@@ -11,14 +11,16 @@ from analyzers.contract_analyzer.tokenomics_analyzer import TokenomicsAnalyzer
 from analyzers.contract_analyzer.safety_scorer import SafetyScorer
 from analyzers.contract_analyzer.educational_analyzer import EducationalAnalyzer
 from analyzers.contract_analyzer.interaction_analyzer import InteractionAnalyzer
+from analyzers.contract_analyzer.creator_analyzer import CreatorAnalyzer
 from analyzers.contract_analyzer.graph_renderer import GraphRenderer
 from analyzers.social_monitor.channel_analyzer import ChannelAnalyzer
 from core.nanette.personality import Nanette
 from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
 from shared.database import (
     Database, ProjectRepository, ContractAnalysisRepository,
-    InteractionAnalysisRepository, ChannelMessageRepository,
-    ServerConfigRepository, DetectedClueRepository
+    InteractionAnalysisRepository, CreatorAnalysisRepository,
+    ChannelMessageRepository, ServerConfigRepository,
+    DetectedClueRepository
 )
 from shared.config import settings
 
@@ -43,6 +45,7 @@ class AnalysisOrchestrator:
         self.project_repo = ProjectRepository(self.db)
         self.analysis_repo = ContractAnalysisRepository(self.db)
         self.interaction_repo = InteractionAnalysisRepository(self.db)
+        self.creator_repo = CreatorAnalysisRepository(self.db)
         self.channel_msg_repo = ChannelMessageRepository(self.db)
         self.config_repo = ServerConfigRepository(self.db)
         self.clue_repo = DetectedClueRepository(self.db)
@@ -100,6 +103,16 @@ class AnalysisOrchestrator:
             print("Calculating safety scores...")
             scores = self.safety_scorer.calculate_score(base_analysis)
             base_analysis['scores'] = scores
+
+            # Step 5.5: Quick creator check (lightweight)
+            try:
+                print("Checking creator wallet...")
+                creator_analyzer = CreatorAnalyzer(blockchain)
+                creator_info = await creator_analyzer.get_contract_creator_quick(contract_address)
+                if creator_info:
+                    base_analysis['creator_info'] = creator_info
+            except Exception as e:
+                print(f"Creator check failed (non-critical): {e}")
 
             # Step 6: Get priority issues
             priority_issues = self.safety_scorer.get_priority_issues(base_analysis)
@@ -491,6 +504,90 @@ class AnalysisOrchestrator:
             return {
                 'stored': False,
                 'error': str(e)
+            }
+
+    async def trace_creator(
+        self, contract_address: str,
+        blockchain: str = "ethereum"
+    ) -> Dict[str, Any]:
+        """
+        Trace the creator wallet for a contract and analyze
+        deployer history.
+        """
+        try:
+            # Check cache first
+            cached = self.creator_repo.get_recent(
+                contract_address, blockchain, max_age_hours=6
+            )
+            if cached:
+                print("Using cached creator analysis")
+                return {
+                    'success': True,
+                    'contract_address': contract_address,
+                    'blockchain': blockchain,
+                    'deployer': {
+                        'address': cached.deployer_address,
+                        'wallet_age_days': cached.deployer_wallet_age_days,
+                        'total_transactions': cached.deployer_total_transactions,
+                        'balance_eth': cached.deployer_balance_eth,
+                        'funding_source': cached.funding_source or {},
+                    },
+                    'sibling_contracts': cached.sibling_contracts or [],
+                    'creator_trust_score': cached.score_breakdown or {},
+                    'red_flags': cached.red_flags or [],
+                    'summary': {
+                        'total_siblings': cached.total_siblings,
+                        'alive_siblings': cached.alive_siblings,
+                    },
+                    'cached': True,
+                }
+
+            # Run full creator analysis
+            print(f"Tracing creator for {contract_address[:10]}... on {blockchain}")
+            creator_analyzer = CreatorAnalyzer(blockchain)
+            analysis = await creator_analyzer.analyze_creator(contract_address)
+
+            if not analysis.get('success'):
+                return analysis
+
+            # Generate Nanette's explanation
+            print("Generating Nanette's creator analysis explanation...")
+            explanation = await self.nanette.explain_creator_trace(analysis)
+            analysis['nanette_explanation'] = explanation
+
+            # Save to database
+            try:
+                score_data = analysis.get('creator_trust_score', {})
+                self.creator_repo.create(
+                    contract_address=contract_address,
+                    blockchain=blockchain,
+                    deployer_address=analysis['deployer']['address'],
+                    deployer_wallet_age_days=analysis['deployer'].get('wallet_age_days'),
+                    deployer_total_transactions=analysis['deployer'].get('total_transactions'),
+                    deployer_balance_eth=analysis['deployer'].get('balance_eth'),
+                    funding_source=analysis['deployer'].get('funding_source'),
+                    sibling_contracts=analysis.get('sibling_contracts'),
+                    total_siblings=analysis.get('summary', {}).get('total_siblings', 0),
+                    alive_siblings=analysis.get('summary', {}).get('alive_siblings', 0),
+                    creator_trust_score=score_data.get('overall_score'),
+                    risk_level=score_data.get('risk_level'),
+                    score_breakdown=score_data,
+                    red_flags=analysis.get('red_flags'),
+                )
+            except Exception as e:
+                print(f"Error saving creator analysis: {e}")
+
+            return analysis
+
+        except Exception as e:
+            print(f"Error in creator trace: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e),
+                'contract_address': contract_address,
+                'blockchain': blockchain,
             }
 
     def get_channel_summary(

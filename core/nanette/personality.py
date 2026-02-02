@@ -385,6 +385,88 @@ Examples of how to deliver real-time data:
                 f"money moves."
             )
 
+    async def explain_creator_trace(self, analysis: Dict[str, Any]) -> str:
+        """
+        Generate Nanette's explanation of a creator wallet trace.
+        """
+        deployer = analysis.get('deployer', {})
+        siblings = analysis.get('sibling_contracts', [])
+        score = analysis.get('creator_trust_score', {})
+        red_flags = analysis.get('red_flags', [])
+        summary = analysis.get('summary', {})
+
+        context_parts = []
+        context_parts.append(f"Contract: {analysis.get('contract_address')}")
+        context_parts.append(f"Blockchain: {analysis.get('blockchain')}")
+        context_parts.append(f"Deployer: {deployer.get('address')}")
+        context_parts.append(f"Wallet age: {deployer.get('wallet_age_days')} days")
+        context_parts.append(f"Total transactions: {deployer.get('total_transactions')}")
+        context_parts.append(f"Balance: {deployer.get('balance_eth', 0)} ETH")
+        context_parts.append(f"Is factory-deployed: {deployer.get('is_factory', False)}")
+
+        funding = deployer.get('funding_source', {})
+        if funding:
+            context_parts.append(f"Funding source: {funding.get('label', 'Unknown')}")
+            context_parts.append(f"Is mixer: {funding.get('is_mixer', False)}")
+
+        context_parts.append(f"\nCreator Trust Score: {score.get('overall_score', 0)}/100 ({score.get('risk_level', 'unknown')})")
+        context_parts.append(f"Wallet Maturity: {score.get('wallet_maturity_score', 0)}/20")
+        context_parts.append(f"Deployment History: {score.get('deployment_history_score', 0)}/30")
+        context_parts.append(f"Sibling Survival: {score.get('sibling_survival_score', 0)}/25")
+        context_parts.append(f"Funding Transparency: {score.get('funding_transparency_score', 0)}/15")
+        context_parts.append(f"Behavioral Patterns: {score.get('behavioral_patterns_score', 0)}/10")
+
+        context_parts.append(f"\nTotal sibling contracts: {summary.get('total_siblings', 0)}")
+        context_parts.append(f"Alive: {summary.get('alive_siblings', 0)}")
+        context_parts.append(f"Dead: {summary.get('dead_siblings', 0)}")
+        context_parts.append(f"Avg lifespan: {summary.get('avg_sibling_lifespan_days', 0)} days")
+
+        if siblings:
+            context_parts.append("\nSibling contracts:")
+            for s in siblings[:10]:
+                name = s.get('token_symbol') or s.get('address', '?')[:12]
+                alive = 'alive' if s.get('is_alive') else 'dead'
+                lp = ', LP removed' if s.get('had_liquidity_removal') else ''
+                context_parts.append(f"- {name}: {alive}, {s.get('lifespan_days', '?')}d{lp}")
+
+        if red_flags:
+            context_parts.append("\nRed flags:")
+            for f in red_flags:
+                context_parts.append(f"- [{f.get('severity', 'info').upper()}] {f.get('description', '')}")
+
+        context = "\n".join(context_parts)
+
+        prompt = (
+            "I've traced the creator wallet for this contract. "
+            f"Here's what I found:\n\n{context}"
+            "\n\nExplain what the deployer's history tells us about this "
+            "contract's trustworthiness. Are there patterns that suggest "
+            "a serial scammer, a legitimate developer, or something in between? "
+            "Teach the user what to look for when evaluating a creator's "
+            "track record. Keep it concise — 3-4 paragraphs."
+        )
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1500,
+                system=self.system_prompt,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            print(f"Error generating creator trace explanation: {e}")
+            total = summary.get('total_siblings', 0)
+            alive = summary.get('alive_siblings', 0)
+            trust = score.get('overall_score', 0)
+            return (
+                f"I've traced the deployer behind this contract. "
+                f"They've created {total} other contracts — "
+                f"{alive} are still alive. "
+                f"Creator Trust Score: {trust}/100. "
+                f"{score.get('recommendation', 'Do your own research.')}"
+            )
+
     def _build_analysis_context(self, analysis: Dict[str, Any]) -> str:
         """Build context string from analysis results"""
         context_parts = []
@@ -452,6 +534,16 @@ Examples of how to deliver real-time data:
                     f"- [{issue.get('severity', 'unknown').upper()}] {issue.get('issue', 'Unknown')}"
                 )
 
+        # Creator info (if available from quick check)
+        creator_info = analysis.get('creator_info', {})
+        if creator_info:
+            context_parts.append(f"\nCreator Information:")
+            context_parts.append(f"- Deployer: {creator_info.get('deployer_address', 'Unknown')}")
+            context_parts.append(f"- Wallet Age: {creator_info.get('wallet_age_days', '?')} days")
+            context_parts.append(f"- Transactions: {creator_info.get('transaction_count', '?')}")
+            if creator_info.get('is_new_wallet'):
+                context_parts.append(f"- WARNING: Brand new wallet")
+
         return "\n".join(context_parts)
 
     def _generate_fallback_response(self, analysis: Dict[str, Any]) -> str:
@@ -501,6 +593,7 @@ Type `/help` to see what I can do. Or just talk to me. I'm listening."""
 
 **Analysis & Security**
 `/analyze <address>` — I'll read the contract and tell you what's hiding in it
+`/trace <address>` — I trace the creator wallet and check their track record
 `/interactions <address>` — I trace where the money flows and map the connections
 `/price <token>` — Current price data
 `/gas` — Ethereum gas prices

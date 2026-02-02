@@ -274,6 +274,74 @@ class EVMClient:
             print(f"Error fetching transaction history ({action}): {e}")
             return []
 
+    async def get_contract_creator(self, contract_address: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the creator/deployer of a contract using Etherscan's
+        getcontractcreation endpoint.
+
+        Returns:
+            Dict with 'deployer' and 'creation_tx_hash', or None
+        """
+        explorer_url = self.explorer_urls.get(self.blockchain)
+        if not explorer_url or not self.explorer_api_key:
+            return None
+
+        params = {
+            'module': 'contract',
+            'action': 'getcontractcreation',
+            'contractaddresses': contract_address,
+            'apikey': self.explorer_api_key,
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(explorer_url, params=params) as response:
+                    data = await response.json()
+                    if data.get('status') == '1' and data.get('result'):
+                        result = data['result'][0]
+                        return {
+                            'deployer': result.get('contractCreator', ''),
+                            'creation_tx_hash': result.get('txHash', ''),
+                        }
+        except Exception as e:
+            print(f"Error fetching contract creator: {e}")
+
+        return None
+
+    async def get_first_transactions(self, address: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch the earliest transactions for an address (ascending order).
+        Useful for determining wallet age and initial funding source.
+        """
+        explorer_url = self.explorer_urls.get(self.blockchain)
+        if not explorer_url:
+            return []
+
+        params = {
+            'module': 'account',
+            'action': 'txlist',
+            'address': address,
+            'startblock': 0,
+            'endblock': 99999999,
+            'page': 1,
+            'offset': min(limit, 100),
+            'sort': 'asc',
+        }
+
+        if self.explorer_api_key:
+            params['apikey'] = self.explorer_api_key
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(explorer_url, params=params) as response:
+                    data = await response.json()
+                    if data.get('status') == '1' and data.get('result'):
+                        return data['result']
+                    return []
+        except Exception as e:
+            print(f"Error fetching first transactions: {e}")
+            return []
+
     async def call_contract_function(self, contract_address: str, abi: str,
                                     function_name: str, *args) -> Any:
         """

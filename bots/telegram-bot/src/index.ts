@@ -9,6 +9,7 @@ import { rintintinCommand } from './commands/rintintin';
 import { handleChatMessage } from './commands/chat';
 import { handleGroupMessage } from './commands/channel';
 import { interactionsCommand } from './commands/interactions';
+import { traceCommand } from './commands/trace';
 import { configCommand } from './commands/config';
 import { priceCommand } from './commands/price';
 import { gasCommand } from './commands/gas';
@@ -62,6 +63,7 @@ bot.command('nanette_config', configCommand);
 // Core commands — wrapped with permission checks
 bot.command('analyze', withPermission('analyze', analyzeCommand));
 bot.command('interactions', withPermission('interactions', interactionsCommand));
+bot.command('trace', withPermission('trace', traceCommand));
 bot.command('help', helpCommand);
 bot.command('about', aboutCommand);
 bot.command('greet', greetCommand);

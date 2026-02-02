@@ -9,6 +9,7 @@ from .models import (
     AnalysisRequest,
     NanetteInteraction,
     InteractionAnalysis,
+    CreatorAnalysis,
     ServerConfig,
     ChannelMessage,
     DetectedClue
@@ -21,6 +22,7 @@ from .repository import (
     AnalysisRequestRepository,
     NanetteInteractionRepository,
     InteractionAnalysisRepository,
+    CreatorAnalysisRepository,
     ServerConfigRepository,
     ChannelMessageRepository,
     DetectedClueRepository
@@ -34,6 +36,7 @@ __all__ = [
     'AnalysisRequest',
     'NanetteInteraction',
     'InteractionAnalysis',
+    'CreatorAnalysis',
     'ServerConfig',
     'ChannelMessage',
     'DetectedClue',
@@ -44,6 +47,7 @@ __all__ = [
     'AnalysisRequestRepository',
     'NanetteInteractionRepository',
     'InteractionAnalysisRepository',
+    'CreatorAnalysisRepository',
     'ServerConfigRepository',
     'ChannelMessageRepository',
     'DetectedClueRepository',

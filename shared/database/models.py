@@ -248,6 +248,7 @@ class ServerConfig(Base):
         # Feature category mapping
         category_map = {
             'analyze': 'allow_analysis',
+            'trace': 'allow_analysis',
             'interactions': 'allow_interactions',
             'price': 'allow_crypto_data',
             'gas': 'allow_crypto_data',
@@ -286,6 +287,43 @@ class ServerConfig(Base):
             return getattr(self, category, True)
 
         return True
+
+
+class CreatorAnalysis(Base):
+    """Creator wallet trace analysis results"""
+    __tablename__ = 'creator_analyses'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Target contract
+    contract_address = Column(String(255), nullable=False, index=True)
+    blockchain = Column(String(50), nullable=False)
+
+    # Deployer info
+    deployer_address = Column(String(255), nullable=False, index=True)
+    deployer_wallet_age_days = Column(Integer, nullable=True)
+    deployer_total_transactions = Column(Integer, nullable=True)
+    deployer_balance_eth = Column(Float, nullable=True)
+    funding_source = Column(JSON, nullable=True)
+
+    # Sibling contracts (JSON array)
+    sibling_contracts = Column(JSON, nullable=True)
+    total_siblings = Column(Integer, default=0)
+    alive_siblings = Column(Integer, default=0)
+
+    # Creator Trust Score
+    creator_trust_score = Column(Integer, nullable=True)
+    risk_level = Column(String(20), nullable=True)
+    score_breakdown = Column(JSON, nullable=True)
+
+    # Red flags (JSON array)
+    red_flags = Column(JSON, nullable=True)
+
+    # Timing
+    analyzed_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CreatorAnalysis {self.contract_address[:10]}... deployer={self.deployer_address[:10]}...>"
 
 
 class ChannelMessage(Base):

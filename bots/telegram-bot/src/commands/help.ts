@@ -6,6 +6,7 @@ export async function helpCommand(ctx: Context) {
 *Analysis & Security*
 /analyze <address> — I read the contract and tell you what's hiding
 /interactions <address> — I trace where the money flows and map the connections
+/trace <address> — I find who deployed it, check their history, and score their trust
 /price <token> — Current price
 /gas — Ethereum gas prices
 /info <token> — Deep dive on a project

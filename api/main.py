@@ -100,6 +100,11 @@ class ChannelSummaryRequest(BaseModel):
     chat_id: str
 
 
+class TraceCreatorRequest(BaseModel):
+    contract_address: str
+    blockchain: str = "ethereum"
+
+
 class ChatRequest(BaseModel):
     message: str
     conversation_history: Optional[list] = None
@@ -397,6 +402,37 @@ async def channel_summary(request: ChannelSummaryRequest):
         summary = orchestrator.get_channel_summary(request.chat_id)
         return summary
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/trace-creator")
+async def trace_creator(request: TraceCreatorRequest):
+    """
+    Trace the creator/deployer of a smart contract.
+
+    Returns:
+        Creator analysis including deployer profile, sibling contracts,
+        trust score, and Nanette's explanation
+    """
+    try:
+        result = await orchestrator.trace_creator(
+            contract_address=request.contract_address,
+            blockchain=request.blockchain
+        )
+
+        if not result.get('success'):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get('error', 'Creator trace failed')
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

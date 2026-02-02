@@ -10,8 +10,8 @@ from contextlib import contextmanager
 from .models import (
     Base, Project, ContractAnalysis, SocialMetric,
     AnalysisRequest, NanetteInteraction,
-    InteractionAnalysis, ServerConfig, ChannelMessage,
-    DetectedClue
+    InteractionAnalysis, CreatorAnalysis,
+    ServerConfig, ChannelMessage, DetectedClue
 )
 
 
@@ -573,3 +573,45 @@ class DetectedClueRepository:
             ).order_by(
                 desc(DetectedClue.detected_at)
             ).limit(limit).all()
+
+
+class CreatorAnalysisRepository:
+    """Repository for CreatorAnalysis — creator wallet trace results"""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def create(self, contract_address: str, blockchain: str,
+               deployer_address: str, **kwargs) -> CreatorAnalysis:
+        """Create a new creator analysis record"""
+        with self.db.get_session() as session:
+            analysis = CreatorAnalysis(
+                contract_address=contract_address.lower(),
+                blockchain=blockchain.lower(),
+                deployer_address=deployer_address.lower(),
+                **kwargs
+            )
+            session.add(analysis)
+            session.commit()
+            session.refresh(analysis)
+            return analysis
+
+    def get_recent(self, contract_address: str, blockchain: str,
+                   max_age_hours: int = 6) -> Optional[CreatorAnalysis]:
+        """Get cached creator analysis if recent enough"""
+        from datetime import timedelta
+        with self.db.get_session() as session:
+            cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+            return session.query(CreatorAnalysis).filter(
+                CreatorAnalysis.contract_address == contract_address.lower(),
+                CreatorAnalysis.blockchain == blockchain.lower(),
+                CreatorAnalysis.analyzed_at >= cutoff
+            ).order_by(desc(CreatorAnalysis.analyzed_at)).first()
+
+    def get_by_deployer(self, deployer_address: str,
+                        limit: int = 20) -> List[CreatorAnalysis]:
+        """Get all analyses for contracts by a specific deployer"""
+        with self.db.get_session() as session:
+            return session.query(CreatorAnalysis).filter(
+                CreatorAnalysis.deployer_address == deployer_address.lower()
+            ).order_by(desc(CreatorAnalysis.analyzed_at)).limit(limit).all()
