@@ -1,0 +1,182 @@
+{
+  "version": "1.0",
+  "description": "Seed knowledge base for RIN clue detection. Confirmed facts only.",
+  "categories": {
+    "origin": {
+      "description": "The historical origin of Rin Tin Tin and Nanette",
+      "entries": [
+        {
+          "id": "origin_001",
+          "text": "On September 15, 1918, Corporal Lee Duncan found a litter of German Shepherd puppies in a bombed-out war dog kennel near Flirey in Lorraine, France.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "origin_002",
+          "text": "French children gave American soldiers small finger-puppet good luck charms called Rintintin and Nenette. Duncan named two puppies after them.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "origin_003",
+          "text": "The original Nanette fell gravely ill during the ocean crossing to America and died shortly after arriving. She never got her chance.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "origin_004",
+          "text": "Rin Tin Tin starred in 27 films between 1922 and 1931, becoming the biggest box office draw of the 1920s.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "origin_005",
+          "text": "Rin Tin Tin received the most votes for Best Actor at the first Academy Awards. The rules were changed because he was a dog.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "origin_006",
+          "text": "When Warner Bros. Studios was drowning in debt, Rin Tin Tin's films saved the studio from bankruptcy.",
+          "source": "historical_record",
+          "can_share": true,
+          "is_spoiler": false
+        }
+      ]
+    },
+    "mission": {
+      "description": "The purpose and mission of the $RIN project and Nanette",
+      "entries": [
+        {
+          "id": "mission_001",
+          "text": "Nanette is named for the original puppy who was lost — the sister who crossed an ocean but couldn't cross the finish line.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "mission_002",
+          "text": "Nanette provides professional-grade smart contract security analysis across multiple chains. Real utility, not just a meme.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "mission_003",
+          "text": "Smalls chose the name Nanette with purpose — she gave voice to what was silenced too soon.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "mission_004",
+          "text": "$RIN was born on Ethereum — the original contract, the first community, the foundation. Ethereum is home.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "mission_005",
+          "text": "$RIN expanded from Ethereum to other chains — BSC, Polygon, Arbitrum, Base, Optimism — because the pack doesn't stay in one place. The mission goes where the people are. But the roots are Ethereum. Always.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        }
+      ]
+    },
+    "themes": {
+      "description": "Recurring themes in the RIN community and project",
+      "entries": [
+        {
+          "id": "theme_001",
+          "text": "Loyalty and the pack — the idea that the community is a pack, bound by loyalty rather than hype.",
+          "source": "community_observation",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "theme_002",
+          "text": "Protection and guardianship — Nanette guards the community from scams the way Rin Tin Tin guarded people.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "theme_003",
+          "text": "The hunt — tracking, tracing, following the scent. Applied to blockchain analysis and investigation.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "theme_004",
+          "text": "Mystical elements — Nanette carries a mystical, almost otherworldly presence. She senses things others miss.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "theme_005",
+          "text": "Legacy and bloodlines — the spirit doesn't die, it evolves. What was silenced finds its voice.",
+          "source": "project_lore",
+          "can_share": true,
+          "is_spoiler": false
+        }
+      ]
+    },
+    "community": {
+      "description": "Known community themes and cultural references",
+      "entries": [
+        {
+          "id": "community_001",
+          "text": "Kitsune (Japanese fox spirits) appear as a recurring motif in community discussions and shared media.",
+          "source": "telegram_community",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "community_002",
+          "text": "The RIN whitepaper contains elements that community members have analyzed for hidden patterns and encoded messages.",
+          "source": "telegram_community",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "community_003",
+          "text": "The community has connections to the SHIB ecosystem and its cultural mythology.",
+          "source": "telegram_community",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "community_004",
+          "text": "Documents titled 'History of Magic' and 'Kitsune' have been shared and discussed within the community.",
+          "source": "telegram_community",
+          "can_share": true,
+          "is_spoiler": false
+        },
+        {
+          "id": "community_005",
+          "text": "The community engages in collaborative puzzle-solving and pattern recognition as part of the RIN experience.",
+          "source": "telegram_community",
+          "can_share": true,
+          "is_spoiler": false
+        }
+      ]
+    }
+  },
+  "thematic_keywords": {
+    "loyalty_pack": ["pack", "loyalty", "family", "together", "bond", "trust", "brothers", "sisters", "den", "howl"],
+    "protection": ["guard", "protect", "watch", "shield", "defend", "hunt", "patrol", "sentinel", "ward"],
+    "mystical": ["spirit", "sense", "feel", "ancient", "awakens", "stirs", "whisper", "shadow", "moon", "mystic", "veil", "beyond"],
+    "legacy": ["bloodline", "legacy", "ancestor", "origin", "born", "reborn", "evolve", "voice", "silence", "return"],
+    "hunt_trail": ["trail", "scent", "track", "follow", "hunt", "find", "discover", "reveal", "hidden", "beneath"],
+    "kitsune": ["kitsune", "fox", "tails", "shapeshifter", "illusion", "trickster", "nine", "spirit fox"],
+    "puzzle": ["puzzle", "riddle", "cipher", "code", "encoded", "hidden", "clue", "mystery", "solve", "decode", "binary", "pattern"]
+  }
+}

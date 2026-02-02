@@ -1,0 +1,25 @@
+# Smart Contract Analysis Dependencies
+web3>=6.15.0
+py-solana>=0.31.0
+eth-account>=0.11.0
+eth-utils>=3.0.0
+
+# Contract Security Analysis Tools
+slither-analyzer>=0.10.0
+mythril>=0.24.0
+
+# Social Media Monitoring
+tweepy>=4.14.0
+praw>=7.7.1
+telethon>=1.35.0
+discord.py>=2.3.2
+
+# Data Processing & Analysis
+pandas>=2.1.0
+numpy>=1.26.0
+requests>=2.31.0
+aiohttp>=3.9.0
+
+# Sentiment Analysis
+transformers>=4.37.0
+torch>=2.1.0

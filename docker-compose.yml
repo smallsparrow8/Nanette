@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Redis for caching and task queue
+  redis:
+    image: redis:7-alpine
+    container_name: nanette-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # PostgreSQL database (optional - comment out if using SQLite)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: nanette-postgres
+  #   environment:
+  #     POSTGRES_DB: nanette
+  #     POSTGRES_USER: nanette
+  #     POSTGRES_PASSWORD: nanette_password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U nanette"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 3
+
+  # Python API Service
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.python
+    container_name: nanette-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./core:/app/core
+      - ./analyzers:/app/analyzers
+      - ./shared:/app/shared
+      - ./api:/app/api
+      - ./nanette.db:/app/nanette.db
+    depends_on:
+      - redis
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # Discord Bot
+  discord-bot:
+    build:
+      context: ./bots/discord-bot
+      dockerfile: ../../docker/Dockerfile.bots
+      args:
+        BOT_NAME: discord-bot
+    container_name: nanette-discord-bot
+    env_file:
+      - .env
+    volumes:
+      - ./bots/discord-bot:/app
+    depends_on:
+      - api
+      - redis
+    command: npm run dev
+    restart: unless-stopped
+
+  # Telegram Bot
+  telegram-bot:
+    build:
+      context: ./bots/telegram-bot
+      dockerfile: ../../docker/Dockerfile.bots
+      args:
+        BOT_NAME: telegram-bot
+    container_name: nanette-telegram-bot
+    env_file:
+      - .env
+    volumes:
+      - ./bots/telegram-bot:/app
+    depends_on:
+      - api
+      - redis
+    command: npm run dev
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  # postgres_data:  # Uncomment if using PostgreSQL

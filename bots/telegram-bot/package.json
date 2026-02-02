@@ -1,0 +1,26 @@
+{
+  "name": "nanette-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot interface for Nanette AI crypto analyzer",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "watch": "tsc -w"
+  },
+  "keywords": ["telegram", "bot", "crypto", "blockchain", "security"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.15.6",
+    "axios": "^1.6.5",
+    "dotenv": "^16.4.0",
+    "@anthropic-ai/sdk": "^0.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}

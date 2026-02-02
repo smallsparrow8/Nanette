@@ -1,0 +1,508 @@
+"""
+Analysis Orchestrator
+Coordinates the complete analysis pipeline
+"""
+from typing import Dict, Any, Optional
+from datetime import datetime
+
+from analyzers.contract_analyzer.evm_analyzer import EVMAnalyzer
+from analyzers.contract_analyzer.vulnerability_scanner import VulnerabilityScanner
+from analyzers.contract_analyzer.tokenomics_analyzer import TokenomicsAnalyzer
+from analyzers.contract_analyzer.safety_scorer import SafetyScorer
+from analyzers.contract_analyzer.educational_analyzer import EducationalAnalyzer
+from analyzers.contract_analyzer.interaction_analyzer import InteractionAnalyzer
+from analyzers.contract_analyzer.graph_renderer import GraphRenderer
+from analyzers.social_monitor.channel_analyzer import ChannelAnalyzer
+from core.nanette.personality import Nanette
+from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
+from shared.database import (
+    Database, ProjectRepository, ContractAnalysisRepository,
+    InteractionAnalysisRepository, ChannelMessageRepository,
+    ServerConfigRepository, DetectedClueRepository
+)
+from shared.config import settings
+
+
+class AnalysisOrchestrator:
+    """Orchestrates complete contract analysis pipeline"""
+
+    def __init__(self):
+        """Initialize orchestrator with all analyzers"""
+        self.nanette = Nanette()
+        self.vulnerability_scanner = VulnerabilityScanner()
+        self.tokenomics_analyzer = TokenomicsAnalyzer()
+        self.safety_scorer = SafetyScorer()
+        self.educational_analyzer = EducationalAnalyzer()
+        self.interaction_analyzer = InteractionAnalyzer()
+        self.graph_renderer = GraphRenderer()
+        self.channel_analyzer = ChannelAnalyzer()
+
+        # Database
+        self.db = Database(settings.database_url)
+        self.db.create_tables()
+        self.project_repo = ProjectRepository(self.db)
+        self.analysis_repo = ContractAnalysisRepository(self.db)
+        self.interaction_repo = InteractionAnalysisRepository(self.db)
+        self.channel_msg_repo = ChannelMessageRepository(self.db)
+        self.config_repo = ServerConfigRepository(self.db)
+        self.clue_repo = DetectedClueRepository(self.db)
+
+    async def analyze_contract(self, contract_address: str, blockchain: str = "ethereum",
+                              save_to_db: bool = True) -> Dict[str, Any]:
+        """
+        Perform complete contract analysis
+
+        Args:
+            contract_address: Contract address to analyze
+            blockchain: Blockchain network
+            save_to_db: Whether to save results to database
+
+        Returns:
+            Complete analysis results with Nanette's response
+        """
+        start_time = datetime.utcnow()
+
+        try:
+            # Step 1: Initialize EVM analyzer
+            print(f"Analyzing contract {contract_address} on {blockchain}...")
+            evm_analyzer = EVMAnalyzer(blockchain)
+
+            # Step 2: Perform base contract analysis
+            base_analysis = await evm_analyzer.analyze_contract(contract_address)
+
+            if 'error' in base_analysis:
+                return {
+                    'success': False,
+                    'error': base_analysis['error'],
+                    'contract_address': contract_address,
+                    'blockchain': blockchain
+                }
+
+            # Step 3: Run advanced vulnerability scan
+            if base_analysis.get('source_code'):
+                print("Running vulnerability scan...")
+                vulnerabilities = self.vulnerability_scanner.scan(
+                    base_analysis['source_code'],
+                    base_analysis.get('abi')
+                )
+                base_analysis['vulnerabilities'] = vulnerabilities
+
+            # Step 4: Analyze tokenomics
+            if base_analysis.get('source_code'):
+                print("Analyzing tokenomics...")
+                tokenomics = self.tokenomics_analyzer.analyze(
+                    base_analysis['source_code'],
+                    base_analysis.get('token_info')
+                )
+                base_analysis['tokenomics'] = tokenomics
+
+            # Step 5: Calculate safety scores
+            print("Calculating safety scores...")
+            scores = self.safety_scorer.calculate_score(base_analysis)
+            base_analysis['scores'] = scores
+
+            # Step 6: Get priority issues
+            priority_issues = self.safety_scorer.get_priority_issues(base_analysis)
+            base_analysis['priority_issues'] = priority_issues
+
+            # Step 6.5: Educational analysis (for learning opportunities)
+            if base_analysis.get('source_code'):
+                print("Finding learning opportunities...")
+                educational_insights = self.educational_analyzer.analyze_for_learning(
+                    base_analysis['source_code'],
+                    contract_address,
+                    base_analysis.get('token_info')
+                )
+                base_analysis['educational_insights'] = educational_insights
+
+            # Step 7: Generate Nanette's personalized response
+            print("Generating Nanette's analysis...")
+            nanette_response = await self.nanette.analyze_contract_with_personality(
+                base_analysis
+            )
+            base_analysis['nanette_response'] = nanette_response
+
+            # Step 8: Save to database if requested
+            if save_to_db:
+                await self._save_analysis(base_analysis)
+
+            # Calculate total analysis time
+            end_time = datetime.utcnow()
+            base_analysis['total_analysis_time'] = (end_time - start_time).total_seconds()
+            base_analysis['success'] = True
+
+            return base_analysis
+
+        except Exception as e:
+            print(f"Error during analysis: {e}")
+            import traceback
+            traceback.print_exc()
+
+            return {
+                'success': False,
+                'error': str(e),
+                'contract_address': contract_address,
+                'blockchain': blockchain
+            }
+
+    async def quick_check(self, contract_address: str, blockchain: str = "ethereum") -> Dict[str, Any]:
+        """
+        Perform quick contract check (faster, less detailed)
+
+        Args:
+            contract_address: Contract address
+            blockchain: Blockchain network
+
+        Returns:
+            Quick check results
+        """
+        evm_analyzer = EVMAnalyzer(blockchain)
+        return await evm_analyzer.quick_scan(contract_address)
+
+    async def _save_analysis(self, analysis: Dict[str, Any]):
+        """Save analysis results to database"""
+        try:
+            # Create or get project
+            project = self.project_repo.create_or_get(
+                contract_address=analysis['contract_address'],
+                blockchain=analysis['blockchain'],
+                name=analysis.get('contract_name'),
+                token_name=analysis.get('token_info', {}).get('name'),
+                token_symbol=analysis.get('token_info', {}).get('symbol')
+            )
+
+            # Create contract analysis record
+            scores = analysis.get('scores', {})
+            tokenomics = analysis.get('tokenomics', {})
+
+            self.analysis_repo.create(
+                project_id=project.id,
+                safety_score=scores.get('overall_score', 0),
+                risk_level=scores.get('risk_level', 'unknown'),
+                vulnerabilities=analysis.get('vulnerabilities', []),
+                code_quality=analysis.get('code_quality', {}),
+                tokenomics=tokenomics,
+                liquidity_analysis=analysis.get('liquidity', {}),
+                code_quality_score=scores.get('code_quality_score'),
+                security_score=scores.get('security_score'),
+                tokenomics_score=scores.get('tokenomics_score'),
+                liquidity_score=scores.get('liquidity_score'),
+                contract_verified=analysis.get('is_verified', False),
+                compiler_version=analysis.get('compiler_version'),
+                optimization_enabled=analysis.get('optimization_enabled'),
+                analysis_duration_seconds=analysis.get('analysis_duration_seconds')
+            )
+
+            print(f"Analysis saved to database for project {project.id}")
+
+        except Exception as e:
+            print(f"Error saving to database: {e}")
+            # Don't fail the whole analysis if database save fails
+            pass
+
+    async def analyze_interactions(
+        self, contract_address: str,
+        blockchain: str = "ethereum"
+    ) -> Dict[str, Any]:
+        """
+        Analyze address interactions and generate visual graph.
+
+        Args:
+            contract_address: Address to analyze
+            blockchain: Blockchain network
+
+        Returns:
+            Dict with analysis data, graph image bytes,
+            and Nanette's explanation
+        """
+        import base64
+
+        try:
+            # Check cache first
+            cached = self.interaction_repo.get_recent(
+                contract_address, blockchain, max_age_hours=1
+            )
+            if cached:
+                print("Using cached interaction analysis")
+
+            # Run interaction analysis
+            print(f"Analyzing interactions for "
+                  f"{contract_address[:10]}... on {blockchain}")
+            analysis = await self.interaction_analyzer.analyze_interactions(
+                contract_address,
+                blockchain=blockchain
+            )
+
+            if not analysis.get('success'):
+                return {
+                    'success': False,
+                    'error': analysis.get(
+                        'error', 'Interaction analysis failed'
+                    ),
+                    'contract_address': contract_address,
+                    'blockchain': blockchain
+                }
+
+            # Render the graph
+            print("Rendering interaction graph...")
+            graph = analysis.get('graph')
+            stats = analysis.get('stats', {})
+            patterns = analysis.get('patterns', [])
+
+            graph_bytes = self.graph_renderer.render_interaction_graph(
+                graph=graph,
+                center_address=contract_address,
+                title="Address Interaction Map",
+                stats=stats,
+                patterns=patterns
+            )
+
+            graph_b64 = base64.b64encode(graph_bytes).decode('utf-8')
+
+            # Generate Nanette's explanation
+            print("Generating Nanette's explanation...")
+            explanation = await self.nanette.explain_interaction_graph(
+                analysis
+            )
+
+            # Save to database
+            try:
+                self.interaction_repo.create(
+                    contract_address=contract_address,
+                    blockchain=blockchain,
+                    total_transactions=stats.get(
+                        'total_transactions', 0
+                    ),
+                    unique_addresses=stats.get(
+                        'unique_addresses', 0
+                    ),
+                    total_value_in=stats.get('total_value_in', 0),
+                    total_value_out=stats.get('total_value_out', 0),
+                    top_senders=analysis.get('top_senders'),
+                    top_receivers=analysis.get('top_receivers'),
+                    notable_patterns=[
+                        p.get('description', '')
+                        for p in patterns
+                    ],
+                    risk_indicators=analysis.get(
+                        'risk_indicators'
+                    )
+                )
+            except Exception as e:
+                print(f"Error saving interaction analysis: {e}")
+
+            return {
+                'success': True,
+                'contract_address': contract_address,
+                'blockchain': blockchain,
+                'stats': stats,
+                'top_senders': analysis.get('top_senders', []),
+                'top_receivers': analysis.get('top_receivers', []),
+                'patterns': patterns,
+                'risk_indicators': analysis.get(
+                    'risk_indicators', []
+                ),
+                'graph_image': graph_b64,
+                'nanette_explanation': explanation
+            }
+
+        except Exception as e:
+            print(f"Error in interaction analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e),
+                'contract_address': contract_address,
+                'blockchain': blockchain
+            }
+
+    async def chat_with_nanette(self, message: str, conversation_history: Optional[list] = None) -> str:
+        """
+        Chat with Nanette
+
+        Args:
+            message: User message
+            conversation_history: Optional conversation history
+
+        Returns:
+            Nanette's response
+        """
+        return await self.nanette.chat(message, conversation_history)
+
+    async def process_channel_message(
+        self, message_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Process an incoming group/channel message.
+
+        Args:
+            message_data: Dict with chat_id, chat_title, chat_type,
+                message_id, user_id, username, is_admin, text,
+                timestamp, platform
+
+        Returns:
+            Dict with analysis results and optional Nanette response
+        """
+        chat_id = str(message_data.get('chat_id', ''))
+        platform = message_data.get('platform', 'telegram')
+
+        try:
+            # Check if channel analysis is enabled for this chat
+            config = self.config_repo.get(chat_id, platform)
+            if config and not config.channel_analysis_enabled:
+                return {
+                    'stored': False,
+                    'reason': 'channel_analysis_disabled'
+                }
+
+            # Pass clue detection flag from config into message
+            if config and config.rin_clue_detection:
+                message_data['rin_clue_detection'] = True
+
+            # Run through channel analyzer
+            analysis = self.channel_analyzer.process_message(message_data)
+
+            # Store in database
+            try:
+                self.channel_msg_repo.create(
+                    chat_id=chat_id,
+                    platform=platform,
+                    chat_title=message_data.get('chat_title'),
+                    chat_type=message_data.get('chat_type'),
+                    message_id=str(message_data.get('message_id', '')),
+                    user_id=str(message_data.get('user_id', '')),
+                    username=message_data.get('username'),
+                    is_admin=message_data.get('is_admin', False),
+                    text=message_data.get('text', ''),
+                    reply_to_message_id=str(
+                        message_data.get('reply_to_message_id', '')
+                    ) if message_data.get('reply_to_message_id') else None,
+                    is_crypto_relevant=analysis.get(
+                        'is_crypto_relevant', False
+                    ),
+                    detected_topics=analysis.get('detected_topics'),
+                    detected_addresses=analysis.get('detected_addresses'),
+                    detected_tokens=analysis.get('detected_tokens'),
+                )
+
+                # Cleanup old messages periodically
+                count = self.channel_msg_repo.count_messages(chat_id)
+                if count > settings.channel_max_stored_messages:
+                    self.channel_msg_repo.cleanup_old(
+                        chat_id,
+                        max_messages=settings.channel_max_stored_messages
+                    )
+            except Exception as e:
+                print(f"Error storing channel message: {e}")
+
+            # If analyzer says respond, generate Nanette's response
+            nanette_response = None
+            if analysis.get('should_respond'):
+                clue = analysis.get('clue_detection')
+                if clue and clue.get('has_potential_clue'):
+                    # Clue-mode response
+                    from core.nanette.rin_theme_prompts import (
+                        build_clue_response_prompt
+                    )
+                    themes = list(
+                        clue.get('matched_themes', {}).keys()
+                    )
+                    knowledge_ctx = '\n'.join(
+                        m['text']
+                        for m in clue.get('knowledge_matches', [])
+                    ) or 'No specific lore matches.'
+                    prompt = build_clue_response_prompt(
+                        message_text=message_data.get('text', ''),
+                        clue_type=clue.get('clue_type', 'unknown'),
+                        confidence=clue.get('confidence', 0),
+                        themes=themes,
+                        knowledge_context=knowledge_ctx,
+                    )
+                else:
+                    # Normal crypto-relevant response
+                    context = analysis.get('suggested_context', '')
+                    prompt = (
+                        f"You're in a group chat. Respond naturally "
+                        f"to the conversation based on this "
+                        f"context:\n\n{context}\n\n"
+                        f"Keep it brief (2-3 sentences max). Be "
+                        f"helpful about crypto topics. Don't be "
+                        f"pushy or over-eager. If a contract address "
+                        f"was posted, mention they can use /analyze "
+                        f"to check it."
+                    )
+                nanette_response = await self.nanette.chat(prompt)
+                analysis['nanette_response'] = nanette_response
+
+                # Update the stored message with Nanette's response
+                try:
+                    recent = self.channel_msg_repo.get_recent(
+                        chat_id, limit=1
+                    )
+                    if recent:
+                        with self.db.get_session() as session:
+                            from shared.database.models import (
+                                ChannelMessage as CM
+                            )
+                            db_msg = session.query(CM).filter_by(
+                                id=recent[0].id
+                            ).first()
+                            if db_msg:
+                                db_msg.nanette_responded = True
+                                db_msg.nanette_response = nanette_response
+                                session.commit()
+                except Exception as e:
+                    print(f"Error updating response record: {e}")
+
+                # Save clue detection to database if applicable
+                clue = analysis.get('clue_detection')
+                if clue and clue.get('has_potential_clue'):
+                    try:
+                        self.clue_repo.create(
+                            chat_id=chat_id,
+                            platform=platform,
+                            message_id=str(
+                                message_data.get('message_id', '')
+                            ),
+                            user_id=str(
+                                message_data.get('user_id', '')
+                            ),
+                            username=message_data.get('username'),
+                            message_text=message_data.get('text'),
+                            clue_type=clue.get('clue_type'),
+                            confidence=clue.get('confidence', 0),
+                            thematic_connections=clue.get(
+                                'thematic_connections'
+                            ),
+                            matched_themes=clue.get(
+                                'matched_themes'
+                            ),
+                            scores=clue.get('scores'),
+                            nanette_response=nanette_response,
+                        )
+                    except Exception as e:
+                        print(f"Error saving clue: {e}")
+
+            return analysis
+
+        except Exception as e:
+            print(f"Error processing channel message: {e}")
+            return {
+                'stored': False,
+                'error': str(e)
+            }
+
+    def get_channel_summary(
+        self, chat_id: str
+    ) -> Dict[str, Any]:
+        """Get summary of recent channel activity."""
+        return self.channel_analyzer.get_chat_summary(chat_id)
+
+    def get_greeting(self) -> str:
+        """Get Nanette's greeting"""
+        return self.nanette.get_greeting()
+
+    def get_help(self) -> str:
+        """Get help message"""
+        return self.nanette.get_help_message()
