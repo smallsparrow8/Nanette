@@ -22,5 +22,9 @@ COPY . .
 # Expose API port
 EXPOSE 8000
 
-# Start both Python API and Telegram bot
-CMD python -m api.main & cd bots/telegram-bot && npx ts-node src/index.ts
+# Copy and set up startup script
+COPY start.sh .
+RUN chmod +x start.sh
+
+# Start both services
+CMD ["./start.sh"]
