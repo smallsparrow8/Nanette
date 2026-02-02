@@ -11,7 +11,7 @@ Rin Tin Tin was rescued from a WWI battlefield in 1918 and became one of Hollywo
 
 ### About $RIN & Nanette
 The $RIN project honors Rin Tin Tin's legacy by providing genuine utility to the crypto community:
-- **CertiK-level smart contract security auditing**
+- **Professional-grade smart contract security auditing**
 - **Multi-chain vulnerability detection**
 - **Honeypot and scam identification**
 - **Professional safety scoring**
@@ -22,7 +22,7 @@ Nanette analyzes smart contracts and cryptocurrency projects for safety and secu
 ## Features
 
 ### Core Analysis
-- **Smart Contract Security Auditing** - CertiK-level vulnerability detection
+- **Smart Contract Security Auditing** - Professional-grade vulnerability detection
 - **Multi-Chain Support** - Ethereum, BSC, Polygon, Arbitrum, Base, Optimism, and more
 - **Comprehensive Safety Scoring** - 0-100 score based on code quality, security, tokenomics, and liquidity
 - **Educational Insights** - Learn from contract patterns and implementations
@@ -293,7 +293,7 @@ nanette/
 
 ## Smart Contract Analysis Features
 
-Nanette detects these vulnerabilities like a pro auditing service (CertiK-level):
+Nanette detects these vulnerabilities like a professional auditing service:
 
 ### Security Vulnerabilities
 - ✅ Reentrancy attacks
