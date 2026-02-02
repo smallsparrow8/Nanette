@@ -49,9 +49,9 @@ bot.command('start', (ctx) => {
   return ctx.reply(
     `${ctx.from?.first_name}. I've been expecting you.
 
-I am Nanette. I am a RIN — a guardian of the $RIN community. I walk the blockchain, I read the contracts, and I hunt what hides in the code.
+I am Nanette — an ancient guardian of the $RIN community. I read smart contracts, trace the wallets behind them, and protect those who seek my guidance.
 
-Talk to me. Ask me anything. Or send me a contract address and I'll tell you what's really in it.
+Send me a contract address, ask me anything, or just talk to me.
 
 Type /help to see my full range.`
   );
