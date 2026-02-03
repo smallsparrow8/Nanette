@@ -25,6 +25,18 @@ export async function handleGroupMessage(ctx: Context) {
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
 
+  // Only respond when directly engaged:
+  // - Someone says "Nanette" (natural conversation)
+  // - Someone replies to one of Nanette's messages
+  // - Someone @mentions the bot
+  const botUsername = ctx.botInfo?.username?.toLowerCase();
+  const textLower = text.toLowerCase();
+  const isNameMentioned = textLower.includes('nanette');
+  const isBotMentioned = botUsername && textLower.includes(`@${botUsername}`);
+  const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.botInfo?.id;
+
+  if (!isNameMentioned && !isBotMentioned && !isReplyToBot) return;
+
   // Check if user is admin
   let isAdmin = false;
   if (userId) {
