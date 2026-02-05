@@ -6,8 +6,8 @@ import { helpCommand } from './commands/help';
 import { aboutCommand } from './commands/about';
 import { greetCommand } from './commands/greet';
 import { rintintinCommand } from './commands/rintintin';
-import { handleChatMessage } from './commands/chat';
-import { handleGroupMessage } from './commands/channel';
+import { handleChatMessage, handleChatImageMessage } from './commands/chat';
+import { handleGroupMessage, handleGroupImageMessage } from './commands/channel';
 import { interactionsCommand } from './commands/interactions';
 import { traceCommand } from './commands/trace';
 import { configCommand } from './commands/config';
@@ -104,6 +104,18 @@ bot.on(message('text'), async (ctx) => {
 
   // DMs → conversational chat handler
   await handleChatMessage(ctx);
+});
+
+// Handle photo messages — route by chat type
+bot.on(message('photo'), async (ctx) => {
+  // Group/supergroup photos → group image handler
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupImageMessage(ctx);
+    return;
+  }
+
+  // DMs → chat image handler
+  await handleChatImageMessage(ctx);
 });
 
 // Error handling

@@ -106,10 +106,12 @@ class TraceCreatorRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: Optional[str] = ""
     conversation_history: Optional[list] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    image_base64: Optional[str] = None
+    image_media_type: Optional[str] = None
 
 
 @app.get("/")
@@ -191,8 +193,10 @@ async def chat(request: ChatRequest):
     """
     try:
         response = await orchestrator.chat_with_nanette(
-            message=request.message,
-            conversation_history=request.conversation_history
+            message=request.message or "",
+            conversation_history=request.conversation_history,
+            image_base64=request.image_base64,
+            image_media_type=request.image_media_type
         )
 
         return {"response": response}

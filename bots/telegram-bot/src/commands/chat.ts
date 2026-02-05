@@ -120,6 +120,86 @@ function splitMessage(text: string, maxLength: number): string[] {
   return chunks;
 }
 
+export async function handleChatImageMessage(ctx: Context) {
+  if (!ctx.message || !('photo' in ctx.message)) return;
+
+  const chatId = ctx.chat!.id;
+  const userId = ctx.from!.id;
+  const caption = ('caption' in ctx.message ? ctx.message.caption : '') || '';
+
+  // Show typing action
+  await ctx.sendChatAction('typing');
+
+  try {
+    // Get the largest photo size (last in array)
+    const photos = ctx.message.photo;
+    const largest = photos[photos.length - 1];
+
+    // Download the photo
+    const fileLink = await ctx.telegram.getFileLink(largest.file_id);
+    const imageResponse = await axios.get(fileLink.href, {
+      responseType: 'arraybuffer',
+    });
+    const imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+
+    // Get conversation history for this chat
+    let history = conversationHistory.get(chatId) || [];
+    if (history.length > 20) {
+      history = history.slice(-20);
+    }
+
+    // Call chat API with image
+    const response = await axios.post(
+      `${API_URL}/chat`,
+      {
+        message: caption || '',
+        conversation_history: history,
+        user_id: userId.toString(),
+        channel_id: chatId.toString(),
+        image_base64: imageBase64,
+        image_media_type: 'image/jpeg',
+      },
+      {
+        timeout: 90000, // 90 seconds — vision takes longer
+      }
+    );
+
+    const nanetteResponse = response.data.response;
+
+    // Update conversation history (store text summary, not base64)
+    history.push(
+      { role: 'user', content: caption || '[sent an image]' },
+      { role: 'assistant', content: nanetteResponse }
+    );
+    conversationHistory.set(chatId, history);
+
+    // Split long messages if needed (Telegram limit: 4096 chars)
+    if (nanetteResponse.length > 4000) {
+      const chunks = splitMessage(nanetteResponse, 4000);
+      for (const chunk of chunks) {
+        await ctx.reply(chunk, { parse_mode: 'Markdown' });
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } else {
+      await ctx.reply(nanetteResponse, { parse_mode: 'Markdown' });
+    }
+  } catch (error: any) {
+    console.error('Error in chat image:', error);
+
+    let errorMessage = "Something's interfering with my senses. ";
+
+    if (error.code === 'ECONNREFUSED') {
+      errorMessage += "I've lost connection. Try again shortly.";
+    } else if (error.response) {
+      errorMessage += `${error.response.data?.error || error.message}`;
+    } else {
+      errorMessage += 'Give me a moment and try again.';
+    }
+
+    await ctx.reply(errorMessage);
+  }
+}
+
 // Clear old conversations (call periodically)
 export function clearOldConversations(maxAgeMs: number = 3600000) {
   // In production, implement proper cleanup with timestamps

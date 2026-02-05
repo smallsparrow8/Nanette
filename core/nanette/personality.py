@@ -102,28 +102,51 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             print(f"Error calling Claude API: {e}")
             return self._generate_fallback_response(analysis_results)
 
-    async def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None) -> str:
+    async def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None,
+                   image_base64: Optional[str] = None, image_media_type: Optional[str] = None) -> str:
         """
-        General chat with Nanette with tool support
+        General chat with Nanette with tool support and optional image analysis
 
         Args:
             user_message: User's message
             conversation_history: Optional conversation history
+            image_base64: Optional base64-encoded image data
+            image_media_type: Optional MIME type of the image (e.g. 'image/jpeg')
 
         Returns:
             Nanette's response
         """
         messages = conversation_history or []
 
-        # Check if user is asking for information that requires tools
-        tool_context = await self._check_and_use_tools(user_message)
+        # Check if user is asking for information that requires tools (text only)
+        tool_context = None
+        if user_message:
+            tool_context = await self._check_and_use_tools(user_message)
 
-        # Add tool results to user message if available
-        enhanced_message = user_message
-        if tool_context:
-            enhanced_message = f"{user_message}\n\n[Current Information Retrieved]:\n{tool_context}"
-
-        messages.append({"role": "user", "content": enhanced_message})
+        # Build the user message content
+        if image_base64:
+            # Multimodal message with image
+            content = []
+            if image_base64:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_media_type or "image/jpeg",
+                        "data": image_base64,
+                    }
+                })
+            text_part = user_message or "What do you see in this image?"
+            if tool_context:
+                text_part = f"{text_part}\n\n[Current Information Retrieved]:\n{tool_context}"
+            content.append({"type": "text", "text": text_part})
+            messages.append({"role": "user", "content": content})
+        else:
+            # Text-only message
+            enhanced_message = user_message
+            if tool_context:
+                enhanced_message = f"{user_message}\n\n[Current Information Retrieved]:\n{tool_context}"
+            messages.append({"role": "user", "content": enhanced_message})
 
         try:
             # Enhanced system prompt with tool awareness

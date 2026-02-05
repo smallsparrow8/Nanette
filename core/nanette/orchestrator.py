@@ -330,18 +330,22 @@ class AnalysisOrchestrator:
                 'blockchain': blockchain
             }
 
-    async def chat_with_nanette(self, message: str, conversation_history: Optional[list] = None) -> str:
+    async def chat_with_nanette(self, message: str, conversation_history: Optional[list] = None,
+                               image_base64: Optional[str] = None, image_media_type: Optional[str] = None) -> str:
         """
         Chat with Nanette
 
         Args:
             message: User message
             conversation_history: Optional conversation history
+            image_base64: Optional base64-encoded image data
+            image_media_type: Optional MIME type of the image
 
         Returns:
             Nanette's response
         """
-        return await self.nanette.chat(message, conversation_history)
+        return await self.nanette.chat(message, conversation_history,
+                                       image_base64=image_base64, image_media_type=image_media_type)
 
     async def process_channel_message(
         self, message_data: Dict[str, Any]
