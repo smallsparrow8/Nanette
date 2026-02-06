@@ -100,62 +100,171 @@ export async function handleGroupMessage(ctx: Context) {
 }
 
 /**
- * Handle a photo message from a group/supergroup chat.
- * Downloads the image, converts to base64, and sends to the Python backend.
+ * Get file info from various Telegram media types
+ */
+function getFileInfo(ctx: Context): {
+  fileId: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  mediaType: string;
+} | null {
+  if (!ctx.message) return null;
+
+  // Photo
+  if ('photo' in ctx.message && ctx.message.photo) {
+    const largest = ctx.message.photo[ctx.message.photo.length - 1];
+    return {
+      fileId: largest.file_id,
+      fileSize: largest.file_size,
+      mimeType: 'image/jpeg',
+      mediaType: 'photo',
+    };
+  }
+
+  // Document
+  if ('document' in ctx.message && ctx.message.document) {
+    return {
+      fileId: ctx.message.document.file_id,
+      fileName: ctx.message.document.file_name,
+      fileSize: ctx.message.document.file_size,
+      mimeType: ctx.message.document.mime_type,
+      mediaType: 'document',
+    };
+  }
+
+  // Sticker
+  if ('sticker' in ctx.message && ctx.message.sticker) {
+    return {
+      fileId: ctx.message.sticker.file_id,
+      fileSize: ctx.message.sticker.file_size,
+      mimeType: ctx.message.sticker.is_animated ? 'application/x-tgsticker' :
+                ctx.message.sticker.is_video ? 'video/webm' : 'image/webp',
+      mediaType: 'sticker',
+    };
+  }
+
+  // Video
+  if ('video' in ctx.message && ctx.message.video) {
+    return {
+      fileId: ctx.message.video.file_id,
+      fileName: ctx.message.video.file_name,
+      fileSize: ctx.message.video.file_size,
+      mimeType: ctx.message.video.mime_type || 'video/mp4',
+      mediaType: 'video',
+    };
+  }
+
+  // Video note
+  if ('video_note' in ctx.message && ctx.message.video_note) {
+    return {
+      fileId: ctx.message.video_note.file_id,
+      fileSize: ctx.message.video_note.file_size,
+      mimeType: 'video/mp4',
+      mediaType: 'video_note',
+    };
+  }
+
+  // Voice
+  if ('voice' in ctx.message && ctx.message.voice) {
+    return {
+      fileId: ctx.message.voice.file_id,
+      fileSize: ctx.message.voice.file_size,
+      mimeType: ctx.message.voice.mime_type || 'audio/ogg',
+      mediaType: 'voice',
+    };
+  }
+
+  // Audio
+  if ('audio' in ctx.message && ctx.message.audio) {
+    return {
+      fileId: ctx.message.audio.file_id,
+      fileName: ctx.message.audio.file_name,
+      fileSize: ctx.message.audio.file_size,
+      mimeType: ctx.message.audio.mime_type || 'audio/mpeg',
+      mediaType: 'audio',
+    };
+  }
+
+  // Animation (GIF)
+  if ('animation' in ctx.message && ctx.message.animation) {
+    return {
+      fileId: ctx.message.animation.file_id,
+      fileName: ctx.message.animation.file_name,
+      fileSize: ctx.message.animation.file_size,
+      mimeType: ctx.message.animation.mime_type || 'video/mp4',
+      mediaType: 'animation',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Determine analysis mode from caption text
+ */
+function detectAnalysisMode(text: string): string | undefined {
+  const lower = text.toLowerCase();
+  const esotericKeywords = [
+    'clue', 'clues', 'hidden', 'esoteric', 'symbolic', 'symbol',
+    'mystery', 'secret', 'occult', 'mystical', 'decode', 'cipher',
+    'meaning', 'deeper', 'anomaly', 'anomalies', 'strange', 'odd',
+    'unusual', 'pattern', 'message', 'sign', 'omen', 'riddle',
+  ];
+  const forensicKeywords = [
+    'metadata', 'exif', 'forensic', 'analyze data', 'underlying',
+    'steganography', 'stego', 'hidden data', 'embedded', 'tampered',
+    'modified', 'original', 'authentic', 'manipulated', 'edited',
+  ];
+
+  if (esotericKeywords.some((kw) => lower.includes(kw))) {
+    return 'esoteric';
+  }
+  if (forensicKeywords.some((kw) => lower.includes(kw))) {
+    return 'forensic';
+  }
+  return undefined;
+}
+
+/**
+ * Handle any media message from a group/supergroup chat.
+ * Downloads the media, converts to base64, and sends to the Python backend.
  * Only responds when directly engaged (name in caption, reply to bot, @mention).
  */
-export async function handleGroupImageMessage(ctx: Context) {
-  if (!ctx.message || !('photo' in ctx.message)) return;
+export async function handleGroupMediaMessage(ctx: Context) {
+  const fileInfo = getFileInfo(ctx);
+  if (!fileInfo) return;
   if (!ctx.chat || ctx.chat.type === 'private') return;
 
-  const caption = ('caption' in ctx.message ? ctx.message.caption : '') || '';
+  const caption = ('caption' in ctx.message! ? (ctx.message as any).caption : '') || '';
   const chatId = ctx.chat.id;
-  const chatTitle = 'title' in ctx.chat ? ctx.chat.title : undefined;
-  const chatType = ctx.chat.type;
-  const messageId = ctx.message.message_id;
+  const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
-  const username =
-    ctx.from?.username || ctx.from?.first_name || 'Unknown';
 
   // Only respond when directly engaged:
   // - Caption contains "Nanette" (natural conversation)
-  // - Someone replies to one of Nanette's messages with a photo
+  // - Someone replies to one of Nanette's messages with media
   // - Caption @mentions the bot
   const botUsername = ctx.botInfo?.username?.toLowerCase();
   const captionLower = caption.toLowerCase();
   const isNameMentioned = captionLower.includes('nanette');
   const isBotMentioned = botUsername && captionLower.includes(`@${botUsername}`);
-  const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.botInfo?.id;
+  const isReplyToBot = ctx.message!.reply_to_message?.from?.id === ctx.botInfo?.id;
 
   if (!isNameMentioned && !isBotMentioned && !isReplyToBot) return;
 
-  // Check if user is admin
-  let isAdmin = false;
-  if (userId) {
-    try {
-      isAdmin = await isUserAdmin(
-        ctx.telegram,
-        chatId,
-        userId
-      );
-    } catch {
-      // Non-critical — default to false
-    }
-  }
-
   try {
-    // Get the largest photo size (last in array)
-    const photos = ctx.message.photo;
-    const largest = photos[photos.length - 1];
-
-    // Download the photo
-    const fileLink = await ctx.telegram.getFileLink(largest.file_id);
-    const imageResponse = await axios.get(fileLink.href, {
+    // Download the file
+    const fileLink = await ctx.telegram.getFileLink(fileInfo.fileId);
+    const fileResponse = await axios.get(fileLink.href, {
       responseType: 'arraybuffer',
     });
-    const imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+    const fileBase64 = Buffer.from(fileResponse.data).toString('base64');
 
-    // Send to chat API with image (reuse /chat endpoint for vision)
+    // Detect analysis mode from caption
+    const analysisMode = detectAnalysisMode(caption);
+
+    // Send to chat API with media
     const response = await axios.post(
       `${API_URL}/chat`,
       {
@@ -163,10 +272,13 @@ export async function handleGroupImageMessage(ctx: Context) {
         conversation_history: [],
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
-        image_base64: imageBase64,
-        image_media_type: 'image/jpeg',
+        image_base64: fileBase64,
+        image_media_type: fileInfo.mimeType,
+        file_name: fileInfo.fileName,
+        file_size: fileInfo.fileSize,
+        analysis_mode: analysisMode,
       },
-      { timeout: 90000 }
+      { timeout: 120000 }
     );
 
     const result = response.data;
@@ -183,9 +295,12 @@ export async function handleGroupImageMessage(ctx: Context) {
     // Silently fail for group messages
     if (error.code !== 'ECONNREFUSED') {
       console.error(
-        `Channel image processing error (chat ${chatId}):`,
+        `Channel ${fileInfo.mediaType} processing error (chat ${chatId}):`,
         error.message
       );
     }
   }
 }
+
+// Keep old function name as alias for backwards compatibility
+export const handleGroupImageMessage = handleGroupMediaMessage;

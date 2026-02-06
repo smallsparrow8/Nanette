@@ -331,7 +331,9 @@ class AnalysisOrchestrator:
             }
 
     async def chat_with_nanette(self, message: str, conversation_history: Optional[list] = None,
-                               image_base64: Optional[str] = None, image_media_type: Optional[str] = None) -> str:
+                               image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
+                               file_name: Optional[str] = None, file_size: Optional[int] = None,
+                               analysis_mode: Optional[str] = None) -> str:
         """
         Chat with Nanette
 
@@ -340,12 +342,18 @@ class AnalysisOrchestrator:
             conversation_history: Optional conversation history
             image_base64: Optional base64-encoded image data
             image_media_type: Optional MIME type of the image
+            file_name: Optional original filename for context
+            file_size: Optional file size in bytes
+            analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
 
         Returns:
             Nanette's response
         """
-        return await self.nanette.chat(message, conversation_history,
-                                       image_base64=image_base64, image_media_type=image_media_type)
+        return await self.nanette.chat(
+            message, conversation_history,
+            image_base64=image_base64, image_media_type=image_media_type,
+            file_name=file_name, file_size=file_size, analysis_mode=analysis_mode
+        )
 
     async def process_channel_message(
         self, message_data: Dict[str, Any]

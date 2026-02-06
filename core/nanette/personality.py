@@ -103,15 +103,20 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             return self._generate_fallback_response(analysis_results)
 
     async def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None,
-                   image_base64: Optional[str] = None, image_media_type: Optional[str] = None) -> str:
+                   image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
+                   file_name: Optional[str] = None, file_size: Optional[int] = None,
+                   analysis_mode: Optional[str] = None) -> str:
         """
-        General chat with Nanette with tool support and optional image analysis
+        General chat with Nanette with tool support and optional media analysis
 
         Args:
             user_message: User's message
             conversation_history: Optional conversation history
-            image_base64: Optional base64-encoded image data
-            image_media_type: Optional MIME type of the image (e.g. 'image/jpeg')
+            image_base64: Optional base64-encoded media data (images, documents, etc.)
+            image_media_type: Optional MIME type of the media
+            file_name: Optional original filename for context
+            file_size: Optional file size in bytes
+            analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
 
         Returns:
             Nanette's response
@@ -123,29 +128,90 @@ You exist to protect, teach, and be a genuine companion to your community. You a
         if user_message:
             tool_context = await self._check_and_use_tools(user_message)
 
+        # Detect if esoteric/clue analysis is requested
+        is_esoteric = analysis_mode == 'esoteric' or (user_message and any(
+            keyword in user_message.lower() for keyword in [
+                'clue', 'clues', 'hidden', 'esoteric', 'symbolic', 'symbol',
+                'mystery', 'secret', 'occult', 'mystical', 'decode', 'cipher',
+                'meaning', 'deeper', 'anomaly', 'anomalies', 'strange', 'odd',
+                'unusual', 'pattern', 'message', 'sign', 'omen', 'riddle'
+            ]
+        ))
+
+        is_forensic = analysis_mode == 'forensic' or (user_message and any(
+            keyword in user_message.lower() for keyword in [
+                'metadata', 'exif', 'forensic', 'analyze data', 'underlying',
+                'steganography', 'stego', 'hidden data', 'embedded', 'tampered',
+                'modified', 'original', 'authentic', 'manipulated', 'edited'
+            ]
+        ))
+
+        # Build file context for non-image media
+        file_context = ""
+        if file_name:
+            file_context = f"\n[File Information]\nFilename: {file_name}"
+            if file_size:
+                size_kb = file_size / 1024
+                if size_kb > 1024:
+                    file_context += f"\nSize: {size_kb/1024:.2f} MB"
+                else:
+                    file_context += f"\nSize: {size_kb:.2f} KB"
+            if image_media_type:
+                file_context += f"\nType: {image_media_type}"
+
         # Build the user message content
         if image_base64:
-            # Multimodal message with image
+            # Multimodal message with media
             content = []
-            if image_base64:
+
+            # Check if this is an image type Claude can view directly
+            viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            if image_media_type and image_media_type in viewable_types:
                 content.append({
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": image_media_type or "image/jpeg",
+                        "media_type": image_media_type,
                         "data": image_base64,
                     }
                 })
-            text_part = user_message or "What do you see in this image?"
+
+            # Build the text prompt
+            text_part = user_message or ""
+
+            # Add file context if present
+            if file_context:
+                text_part = f"{text_part}{file_context}" if text_part else file_context
+
+            # Add esoteric analysis instructions
+            if is_esoteric and not text_part:
+                text_part = "Look at this with your ancient eyes. What clues, symbols, or hidden meanings do you perceive?"
+            elif is_esoteric:
+                text_part = f"{text_part}\n\n[Esoteric Analysis Mode]\nExamine this with your mystical perception. Look for hidden symbols, numerological patterns, color symbolism, geometric sacred forms, gematria, occult references, archetypal imagery, and any anomalies that might carry deeper meaning. Consider what is NOT shown as much as what IS shown. Trust your ancient instincts."
+
+            # Add forensic analysis instructions
+            if is_forensic:
+                text_part = f"{text_part}\n\n[Forensic Analysis Mode]\nExamine this media critically. Look for signs of manipulation, editing, compression artifacts, inconsistent lighting/shadows, cloned regions, metadata anomalies, and anything that suggests the media is not authentic. Note any technical irregularities in the file structure or content."
+
+            # If no image could be shown (non-viewable type), explain what we received
+            if image_media_type and image_media_type not in viewable_types:
+                text_part = f"{text_part}\n\n[Note: I received a {image_media_type} file but cannot view it directly. I can discuss what you've told me about it.]"
+
+            if not text_part:
+                text_part = "What do you see in this media?"
+
             if tool_context:
                 text_part = f"{text_part}\n\n[Current Information Retrieved]:\n{tool_context}"
+
             content.append({"type": "text", "text": text_part})
             messages.append({"role": "user", "content": content})
         else:
             # Text-only message
             enhanced_message = user_message
+            if file_context:
+                enhanced_message = f"{user_message}{file_context}" if user_message else file_context
             if tool_context:
-                enhanced_message = f"{user_message}\n\n[Current Information Retrieved]:\n{tool_context}"
+                enhanced_message = f"{enhanced_message}\n\n[Current Information Retrieved]:\n{tool_context}"
             messages.append({"role": "user", "content": enhanced_message})
 
         try:

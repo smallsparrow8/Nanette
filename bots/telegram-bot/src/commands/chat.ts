@@ -120,27 +120,151 @@ function splitMessage(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-export async function handleChatImageMessage(ctx: Context) {
-  if (!ctx.message || !('photo' in ctx.message)) return;
+/**
+ * Get file info from various Telegram media types
+ */
+function getFileInfo(ctx: Context): {
+  fileId: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  mediaType: string;
+} | null {
+  if (!ctx.message) return null;
+
+  // Photo
+  if ('photo' in ctx.message && ctx.message.photo) {
+    const largest = ctx.message.photo[ctx.message.photo.length - 1];
+    return {
+      fileId: largest.file_id,
+      fileSize: largest.file_size,
+      mimeType: 'image/jpeg',
+      mediaType: 'photo',
+    };
+  }
+
+  // Document (files, images sent as documents, PDFs, etc.)
+  if ('document' in ctx.message && ctx.message.document) {
+    return {
+      fileId: ctx.message.document.file_id,
+      fileName: ctx.message.document.file_name,
+      fileSize: ctx.message.document.file_size,
+      mimeType: ctx.message.document.mime_type,
+      mediaType: 'document',
+    };
+  }
+
+  // Sticker
+  if ('sticker' in ctx.message && ctx.message.sticker) {
+    return {
+      fileId: ctx.message.sticker.file_id,
+      fileSize: ctx.message.sticker.file_size,
+      mimeType: ctx.message.sticker.is_animated ? 'application/x-tgsticker' :
+                ctx.message.sticker.is_video ? 'video/webm' : 'image/webp',
+      mediaType: 'sticker',
+    };
+  }
+
+  // Video
+  if ('video' in ctx.message && ctx.message.video) {
+    return {
+      fileId: ctx.message.video.file_id,
+      fileName: ctx.message.video.file_name,
+      fileSize: ctx.message.video.file_size,
+      mimeType: ctx.message.video.mime_type || 'video/mp4',
+      mediaType: 'video',
+    };
+  }
+
+  // Video note (round videos)
+  if ('video_note' in ctx.message && ctx.message.video_note) {
+    return {
+      fileId: ctx.message.video_note.file_id,
+      fileSize: ctx.message.video_note.file_size,
+      mimeType: 'video/mp4',
+      mediaType: 'video_note',
+    };
+  }
+
+  // Voice message
+  if ('voice' in ctx.message && ctx.message.voice) {
+    return {
+      fileId: ctx.message.voice.file_id,
+      fileSize: ctx.message.voice.file_size,
+      mimeType: ctx.message.voice.mime_type || 'audio/ogg',
+      mediaType: 'voice',
+    };
+  }
+
+  // Audio file
+  if ('audio' in ctx.message && ctx.message.audio) {
+    return {
+      fileId: ctx.message.audio.file_id,
+      fileName: ctx.message.audio.file_name,
+      fileSize: ctx.message.audio.file_size,
+      mimeType: ctx.message.audio.mime_type || 'audio/mpeg',
+      mediaType: 'audio',
+    };
+  }
+
+  // Animation (GIF)
+  if ('animation' in ctx.message && ctx.message.animation) {
+    return {
+      fileId: ctx.message.animation.file_id,
+      fileName: ctx.message.animation.file_name,
+      fileSize: ctx.message.animation.file_size,
+      mimeType: ctx.message.animation.mime_type || 'video/mp4',
+      mediaType: 'animation',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Determine analysis mode from caption text
+ */
+function detectAnalysisMode(text: string): string | undefined {
+  const lower = text.toLowerCase();
+  const esotericKeywords = [
+    'clue', 'clues', 'hidden', 'esoteric', 'symbolic', 'symbol',
+    'mystery', 'secret', 'occult', 'mystical', 'decode', 'cipher',
+    'meaning', 'deeper', 'anomaly', 'anomalies', 'strange', 'odd',
+    'unusual', 'pattern', 'message', 'sign', 'omen', 'riddle',
+  ];
+  const forensicKeywords = [
+    'metadata', 'exif', 'forensic', 'analyze data', 'underlying',
+    'steganography', 'stego', 'hidden data', 'embedded', 'tampered',
+    'modified', 'original', 'authentic', 'manipulated', 'edited',
+  ];
+
+  if (esotericKeywords.some((kw) => lower.includes(kw))) {
+    return 'esoteric';
+  }
+  if (forensicKeywords.some((kw) => lower.includes(kw))) {
+    return 'forensic';
+  }
+  return undefined;
+}
+
+export async function handleChatMediaMessage(ctx: Context) {
+  const fileInfo = getFileInfo(ctx);
+  if (!fileInfo) return;
 
   const chatId = ctx.chat!.id;
   const userId = ctx.from!.id;
-  const caption = ('caption' in ctx.message ? ctx.message.caption : '') || '';
+  const caption = ('caption' in ctx.message! ? (ctx.message as any).caption : '') || '';
 
   // Show typing action
   await ctx.sendChatAction('typing');
 
   try {
-    // Get the largest photo size (last in array)
-    const photos = ctx.message.photo;
-    const largest = photos[photos.length - 1];
-
-    // Download the photo
-    const fileLink = await ctx.telegram.getFileLink(largest.file_id);
-    const imageResponse = await axios.get(fileLink.href, {
+    // Download the file
+    const fileLink = await ctx.telegram.getFileLink(fileInfo.fileId);
+    const fileResponse = await axios.get(fileLink.href, {
       responseType: 'arraybuffer',
     });
-    const imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+    const fileBase64 = Buffer.from(fileResponse.data).toString('base64');
 
     // Get conversation history for this chat
     let history = conversationHistory.get(chatId) || [];
@@ -148,7 +272,10 @@ export async function handleChatImageMessage(ctx: Context) {
       history = history.slice(-20);
     }
 
-    // Call chat API with image
+    // Detect analysis mode from caption
+    const analysisMode = detectAnalysisMode(caption);
+
+    // Call chat API with media
     const response = await axios.post(
       `${API_URL}/chat`,
       {
@@ -156,19 +283,25 @@ export async function handleChatImageMessage(ctx: Context) {
         conversation_history: history,
         user_id: userId.toString(),
         channel_id: chatId.toString(),
-        image_base64: imageBase64,
-        image_media_type: 'image/jpeg',
+        image_base64: fileBase64,
+        image_media_type: fileInfo.mimeType,
+        file_name: fileInfo.fileName,
+        file_size: fileInfo.fileSize,
+        analysis_mode: analysisMode,
       },
       {
-        timeout: 90000, // 90 seconds — vision takes longer
+        timeout: 120000, // 2 minutes — media analysis takes longer
       }
     );
 
     const nanetteResponse = response.data.response;
 
     // Update conversation history (store text summary, not base64)
+    const mediaDesc = fileInfo.fileName
+      ? `[sent ${fileInfo.mediaType}: ${fileInfo.fileName}]`
+      : `[sent ${fileInfo.mediaType}]`;
     history.push(
-      { role: 'user', content: caption || '[sent an image]' },
+      { role: 'user', content: caption || mediaDesc },
       { role: 'assistant', content: nanetteResponse }
     );
     conversationHistory.set(chatId, history);
@@ -178,13 +311,13 @@ export async function handleChatImageMessage(ctx: Context) {
       const chunks = splitMessage(nanetteResponse, 4000);
       for (const chunk of chunks) {
         await ctx.reply(chunk, { parse_mode: 'Markdown' });
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     } else {
       await ctx.reply(nanetteResponse, { parse_mode: 'Markdown' });
     }
   } catch (error: any) {
-    console.error('Error in chat image:', error);
+    console.error(`Error in chat ${fileInfo.mediaType}:`, error);
 
     let errorMessage = "Something's interfering with my senses. ";
 
@@ -199,6 +332,9 @@ export async function handleChatImageMessage(ctx: Context) {
     await ctx.reply(errorMessage);
   }
 }
+
+// Keep old function name as alias for backwards compatibility
+export const handleChatImageMessage = handleChatMediaMessage;
 
 // Clear old conversations (call periodically)
 export function clearOldConversations(maxAgeMs: number = 3600000) {

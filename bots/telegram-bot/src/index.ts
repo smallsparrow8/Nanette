@@ -6,8 +6,8 @@ import { helpCommand } from './commands/help';
 import { aboutCommand } from './commands/about';
 import { greetCommand } from './commands/greet';
 import { rintintinCommand } from './commands/rintintin';
-import { handleChatMessage, handleChatImageMessage } from './commands/chat';
-import { handleGroupMessage, handleGroupImageMessage } from './commands/channel';
+import { handleChatMessage, handleChatMediaMessage } from './commands/chat';
+import { handleGroupMessage, handleGroupMediaMessage } from './commands/channel';
 import { interactionsCommand } from './commands/interactions';
 import { traceCommand } from './commands/trace';
 import { configCommand } from './commands/config';
@@ -106,16 +106,77 @@ bot.on(message('text'), async (ctx) => {
   await handleChatMessage(ctx);
 });
 
-// Handle photo messages — route by chat type
+// Handle all media types — route by chat type
+// Photos
 bot.on(message('photo'), async (ctx) => {
-  // Group/supergroup photos → group image handler
   if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
-    await handleGroupImageMessage(ctx);
-    return;
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
   }
+});
 
-  // DMs → chat image handler
-  await handleChatImageMessage(ctx);
+// Documents (files, PDFs, images sent as files, etc.)
+bot.on(message('document'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Stickers
+bot.on(message('sticker'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Videos
+bot.on(message('video'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Video notes (round videos)
+bot.on(message('video_note'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Voice messages
+bot.on(message('voice'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Audio files
+bot.on(message('audio'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
+});
+
+// Animations (GIFs)
+bot.on(message('animation'), async (ctx) => {
+  if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+    await handleGroupMediaMessage(ctx);
+  } else {
+    await handleChatMediaMessage(ctx);
+  }
 });
 
 // Error handling

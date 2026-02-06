@@ -112,6 +112,9 @@ class ChatRequest(BaseModel):
     channel_id: Optional[str] = None
     image_base64: Optional[str] = None
     image_media_type: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+    analysis_mode: Optional[str] = None  # 'standard', 'esoteric', 'forensic'
 
 
 @app.get("/")
@@ -196,7 +199,10 @@ async def chat(request: ChatRequest):
             message=request.message or "",
             conversation_history=request.conversation_history,
             image_base64=request.image_base64,
-            image_media_type=request.image_media_type
+            image_media_type=request.image_media_type,
+            file_name=request.file_name,
+            file_size=request.file_size,
+            analysis_mode=request.analysis_mode
         )
 
         return {"response": response}
