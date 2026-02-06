@@ -5,9 +5,32 @@ import { isUserAdmin } from '../utils/adminCache';
 const API_URL = process.env.API_URL || 'http://localhost:8000';
 
 /**
+ * Check if a message is directed at Nanette
+ */
+function isDirectedAtNanette(ctx: Context, text: string): boolean {
+  const lowerText = text.toLowerCase();
+
+  // Check for name mentions
+  if (lowerText.includes('nanette')) return true;
+
+  // Check for @mention of the bot
+  const botUsername = ctx.botInfo?.username?.toLowerCase();
+  if (botUsername && lowerText.includes(`@${botUsername}`)) return true;
+
+  // Check if this is a reply to Nanette's message
+  const msg = ctx.message as any;
+  if (msg?.reply_to_message?.from?.is_bot) {
+    const replyToBotId = msg.reply_to_message.from.id;
+    if (replyToBotId === ctx.botInfo?.id) return true;
+  }
+
+  return false;
+}
+
+/**
  * Handle a text message from a group/supergroup chat.
- * Sends the message to the Python backend for analysis.
- * If the backend decides Nanette should respond, sends her response.
+ * Routes messages directed at Nanette to the chat API for response.
+ * Other messages go to channel analysis for logging/monitoring.
  */
 export async function handleGroupMessage(ctx: Context) {
   if (!ctx.message || !('text' in ctx.message)) return;
@@ -25,6 +48,45 @@ export async function handleGroupMessage(ctx: Context) {
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
 
+  // Check if message is directed at Nanette
+  const directedAtNanette = isDirectedAtNanette(ctx, text);
+
+  if (directedAtNanette) {
+    // Direct engagement — use chat API for immediate response
+    try {
+      const response = await axios.post(
+        `${API_URL}/chat`,
+        {
+          message: text,
+          conversation_history: [],
+          user_id: userId ? String(userId) : null,
+          channel_id: String(chatId),
+        },
+        { timeout: 60000 }
+      );
+
+      const result = response.data;
+
+      if (result.response) {
+        await ctx.reply(result.response, {
+          parse_mode: 'Markdown',
+          reply_parameters: {
+            message_id: messageId,
+          },
+        });
+      }
+    } catch (error: any) {
+      if (error.code !== 'ECONNREFUSED') {
+        console.error(
+          `Channel direct message error (chat ${chatId}):`,
+          error.message
+        );
+      }
+    }
+    return;
+  }
+
+  // Background channel analysis for non-directed messages
   // Check if user is admin
   let isAdmin = false;
   if (userId) {
@@ -66,7 +128,7 @@ export async function handleGroupMessage(ctx: Context) {
 
     const result = response.data;
 
-    // If Nanette should respond, send her message
+    // If channel analyzer says respond, send her message
     if (result.should_respond && result.nanette_response) {
       await ctx.reply(result.nanette_response, {
         parse_mode: 'Markdown',
@@ -77,7 +139,6 @@ export async function handleGroupMessage(ctx: Context) {
     }
   } catch (error: any) {
     // Silently fail for group messages — don't spam the chat
-    // with error messages
     if (error.code !== 'ECONNREFUSED') {
       console.error(
         `Channel message processing error (chat ${chatId}):`,
@@ -228,6 +289,11 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const chatId = ctx.chat.id;
   const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
+
+  // Only respond if media is directed at Nanette
+  if (!isDirectedAtNanette(ctx, caption)) {
+    return;
+  }
 
   try {
     // Download the file
