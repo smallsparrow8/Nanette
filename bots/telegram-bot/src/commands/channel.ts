@@ -5,26 +5,53 @@ import { isUserAdmin } from '../utils/adminCache';
 const API_URL = process.env.API_URL || 'http://localhost:8000';
 
 /**
- * Check if a message is directed at Nanette
+ * Check if a message warrants Nanette's engagement
+ * Returns engagement level: 'direct' (always respond), 'natural' (contextual), or null
  */
-function isDirectedAtNanette(ctx: Context, text: string): boolean {
+function detectEngagement(ctx: Context, text: string): 'direct' | 'natural' | null {
   const lowerText = text.toLowerCase();
 
-  // Check for name mentions
-  if (lowerText.includes('nanette')) return true;
+  // DIRECT ENGAGEMENT — always respond
+  // Name mentions
+  if (lowerText.includes('nanette')) return 'direct';
 
-  // Check for @mention of the bot
+  // @mention of the bot
   const botUsername = ctx.botInfo?.username?.toLowerCase();
-  if (botUsername && lowerText.includes(`@${botUsername}`)) return true;
+  if (botUsername && lowerText.includes(`@${botUsername}`)) return 'direct';
 
-  // Check if this is a reply to Nanette's message
+  // Reply to Nanette's message
   const msg = ctx.message as any;
   if (msg?.reply_to_message?.from?.is_bot) {
     const replyToBotId = msg.reply_to_message.from.id;
-    if (replyToBotId === ctx.botInfo?.id) return true;
+    if (replyToBotId === ctx.botInfo?.id) return 'direct';
   }
 
-  return false;
+  // NATURAL ENGAGEMENT — join conversation naturally
+  // Questions about crypto/contracts/wallets
+  const cryptoTerms = [
+    'contract', 'token', 'wallet', 'address', 'scam', 'rug',
+    'honeypot', 'liquidity', 'dex', 'swap', 'eth', 'sol',
+    'safe', 'legit', 'trust', 'audit', 'verify', 'check',
+    '0x', 'ca ', 'mint', 'airdrop', 'presale', 'launch',
+  ];
+  const isQuestion = text.includes('?') ||
+    /^(who|what|where|when|why|how|is|are|can|should|does|do|will|would)\b/i.test(text.trim());
+
+  if (isQuestion && cryptoTerms.some(term => lowerText.includes(term))) {
+    return 'natural';
+  }
+
+  // Contract addresses posted (likely wanting analysis)
+  if (/0x[a-fA-F0-9]{40}/.test(text)) {
+    return 'natural';
+  }
+
+  // Calls for help or advice
+  if (isQuestion && /\b(help|advice|opinion|think|know|anyone|somebody)\b/i.test(text)) {
+    return 'natural';
+  }
+
+  return null;
 }
 
 /**
@@ -48,16 +75,21 @@ export async function handleGroupMessage(ctx: Context) {
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
 
-  // Check if message is directed at Nanette
-  const directedAtNanette = isDirectedAtNanette(ctx, text);
+  // Detect engagement level
+  const engagement = detectEngagement(ctx, text);
 
-  if (directedAtNanette) {
-    // Direct engagement — use chat API for immediate response
+  if (engagement) {
+    // Engage with the conversation
     try {
+      // For natural engagement, add context hint so Nanette responds conversationally
+      const messageToSend = engagement === 'natural'
+        ? `[Group conversation - join naturally if you can help]\n${text}`
+        : text;
+
       const response = await axios.post(
         `${API_URL}/chat`,
         {
-          message: text,
+          message: messageToSend,
           conversation_history: [],
           user_id: userId ? String(userId) : null,
           channel_id: String(chatId),
@@ -290,8 +322,9 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
 
-  // Only respond if media is directed at Nanette
-  if (!isDirectedAtNanette(ctx, caption)) {
+  // Only respond if there's engagement (direct or natural)
+  const engagement = detectEngagement(ctx, caption);
+  if (!engagement) {
     return;
   }
 
