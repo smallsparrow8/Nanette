@@ -25,18 +25,6 @@ export async function handleGroupMessage(ctx: Context) {
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
 
-  // Only respond when directly engaged:
-  // - Someone says "Nanette" (natural conversation)
-  // - Someone replies to one of Nanette's messages
-  // - Someone @mentions the bot
-  const botUsername = ctx.botInfo?.username?.toLowerCase();
-  const textLower = text.toLowerCase();
-  const isNameMentioned = textLower.includes('nanette');
-  const isBotMentioned = botUsername && textLower.includes(`@${botUsername}`);
-  const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.botInfo?.id;
-
-  if (!isNameMentioned && !isBotMentioned && !isReplyToBot) return;
-
   // Check if user is admin
   let isAdmin = false;
   if (userId) {
@@ -240,19 +228,6 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const chatId = ctx.chat.id;
   const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
-
-  // Only respond when directly engaged:
-  // - Caption contains "Nanette" (natural conversation)
-  // - Someone replies to one of Nanette's messages with media
-  // - Caption @mentions the bot
-  const botUsername = ctx.botInfo?.username?.toLowerCase();
-  const captionLower = caption.toLowerCase();
-  const isNameMentioned = captionLower.includes('nanette');
-  const isBotMentioned = botUsername && captionLower.includes(`@${botUsername}`);
-  const msg = ctx.message as any;
-  const isReplyToBot = msg?.reply_to_message?.from?.id === ctx.botInfo?.id;
-
-  if (!isNameMentioned && !isBotMentioned && !isReplyToBot) return;
 
   try {
     // Download the file
