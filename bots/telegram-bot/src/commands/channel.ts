@@ -249,7 +249,8 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const captionLower = caption.toLowerCase();
   const isNameMentioned = captionLower.includes('nanette');
   const isBotMentioned = botUsername && captionLower.includes(`@${botUsername}`);
-  const isReplyToBot = ctx.message!.reply_to_message?.from?.id === ctx.botInfo?.id;
+  const msg = ctx.message as any;
+  const isReplyToBot = msg?.reply_to_message?.from?.id === ctx.botInfo?.id;
 
   if (!isNameMentioned && !isBotMentioned && !isReplyToBot) return;
 
