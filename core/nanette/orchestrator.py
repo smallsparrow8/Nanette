@@ -462,21 +462,20 @@ class AnalysisOrchestrator:
 
                 # Update the stored message with Nanette's response
                 try:
-                    recent = self.channel_msg_repo.get_recent(
-                        chat_id, limit=1
-                    )
-                    if recent:
-                        with self.db.get_session() as session:
-                            from shared.database.models import (
-                                ChannelMessage as CM
-                            )
-                            db_msg = session.query(CM).filter_by(
-                                id=recent[0].id
-                            ).first()
-                            if db_msg:
-                                db_msg.nanette_responded = True
-                                db_msg.nanette_response = nanette_response
-                                session.commit()
+                    with self.db.get_session() as session:
+                        from shared.database.models import (
+                            ChannelMessage as CM
+                        )
+                        # Query by chat_id and message_id directly to avoid
+                        # detached session issues
+                        db_msg = session.query(CM).filter_by(
+                            chat_id=chat_id,
+                            message_id=str(message_data.get('message_id', ''))
+                        ).first()
+                        if db_msg:
+                            db_msg.nanette_responded = True
+                            db_msg.nanette_response = nanette_response
+                            session.commit()
                 except Exception as e:
                     print(f"Error updating response record: {e}")
 

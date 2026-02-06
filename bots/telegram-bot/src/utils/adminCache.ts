@@ -33,8 +33,30 @@ export async function getChatAdminIds(
 
     cache.set(key, { adminIds, fetchedAt: now });
     return adminIds;
-  } catch (error) {
-    console.error(`Failed to fetch admins for chat ${key}:`, error);
+  } catch (error: any) {
+    // Handle group -> supergroup migration
+    // Telegram returns migrate_to_chat_id when a group is upgraded
+    const migrateId = error?.parameters?.migrate_to_chat_id;
+    if (migrateId) {
+      try {
+        const admins = await telegram.getChatAdministrators(migrateId);
+        const adminIds = new Set(
+          admins.map((a) => String(a.user.id))
+        );
+        // Cache under both old and new IDs
+        cache.set(key, { adminIds, fetchedAt: now });
+        cache.set(String(migrateId), { adminIds, fetchedAt: now });
+        return adminIds;
+      } catch (retryError) {
+        // Migration retry failed, fall through to default handling
+      }
+    }
+
+    // Only log non-migration errors (migration is expected during upgrades)
+    if (!migrateId) {
+      console.error(`Failed to fetch admins for chat ${key}:`, error);
+    }
+
     // Return cached data if available, even if stale
     if (cached) {
       return cached.adminIds;
