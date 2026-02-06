@@ -107,7 +107,8 @@ You exist to protect, teach, and be a genuine companion to your community. You a
                    directly_addressed: bool = False,
                    image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                    file_name: Optional[str] = None, file_size: Optional[int] = None,
-                   analysis_mode: Optional[str] = None):
+                   analysis_mode: Optional[str] = None,
+                   member_context: Optional[str] = None):
         """
         General chat with Nanette with tool support and optional media analysis
 
@@ -122,6 +123,7 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             file_name: Optional original filename for context
             file_size: Optional file size in bytes
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
+            member_context: Optional context about the member (interests, history, etc.)
 
         Returns:
             Dict with 'response' and 'should_respond'
@@ -132,7 +134,7 @@ You exist to protect, teach, and be a genuine companion to your community. You a
         if is_group and not directly_addressed:
             return await self._decide_group_engagement(
                 user_message, username, image_base64, image_media_type,
-                file_name, file_size, analysis_mode
+                file_name, file_size, analysis_mode, member_context
             )
 
         # Check if user is asking for information that requires tools (text only)
@@ -241,6 +243,21 @@ Examples:
 - "I've been watching that project. Here's what I see..."
 """
 
+            # Add member context if available (private knowledge, don't volunteer)
+            if member_context:
+                enhanced_system_prompt += f"""
+
+MEMBER KNOWLEDGE (PRIVATE - DO NOT VOLUNTEER):
+You know this about the person you're talking to: {member_context}
+
+IMPORTANT: This is background knowledge you carry about pack members. You remember them like a loyal guardian remembers those under her protection. However:
+- Do NOT volunteer this information unprompted
+- Do NOT say things like "I know you're interested in..." or "I remember you asked about..."
+- Only reference this knowledge if THEY bring it up first, or if it's directly relevant to helping them
+- Use this to inform HOW you respond, not WHAT you say about them
+- If they ask what you know about them, you can share warmly — you're not hiding it, you just don't announce it
+"""
+
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
@@ -257,7 +274,7 @@ Examples:
     async def _decide_group_engagement(self, user_message: str, username: Optional[str] = None,
                                        image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                                        file_name: Optional[str] = None, file_size: Optional[int] = None,
-                                       analysis_mode: Optional[str] = None):
+                                       analysis_mode: Optional[str] = None, member_context: Optional[str] = None):
         """
         Decide if Nanette should engage with a group message she wasn't directly addressed in.
         Let her read the conversation naturally and decide when to contribute.
@@ -268,6 +285,8 @@ Examples:
             context_parts.append(f"From: {username}")
         if file_name:
             context_parts.append(f"Shared file: {file_name}")
+        if member_context:
+            context_parts.append(f"[You know about this person: {member_context}]")
         context = "\n".join(context_parts) if context_parts else ""
 
         # Build the decision prompt

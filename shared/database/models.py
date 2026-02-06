@@ -367,6 +367,66 @@ class ChannelMessage(Base):
         )
 
 
+class MemberProfile(Base):
+    """Tracks community member profiles for personalized interactions"""
+    __tablename__ = 'member_profiles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Member identification
+    user_id = Column(String(255), nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    display_name = Column(String(255), nullable=True)
+    platform = Column(String(50), nullable=False, default='telegram')
+    chat_id = Column(String(255), nullable=True, index=True)  # Primary group
+
+    # Activity metrics
+    message_count = Column(Integer, default=0)
+    interaction_count = Column(Integer, default=0)  # Times interacted with Nanette
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    last_interaction = Column(DateTime, nullable=True)
+
+    # Profile data (JSON)
+    topics_discussed = Column(JSON, nullable=True, default=list)  # Topics they talk about
+    interests = Column(JSON, nullable=True, default=list)  # Detected interests
+    notable_facts = Column(JSON, nullable=True, default=list)  # Things learned about them
+    contracts_asked_about = Column(JSON, nullable=True, default=list)  # Contract addresses they've asked about
+
+    # Personality insights
+    communication_style = Column(String(50), nullable=True)  # casual, technical, formal
+    typical_sentiment = Column(String(20), nullable=True)  # positive, neutral, negative
+    expertise_level = Column(String(20), nullable=True)  # beginner, intermediate, expert
+
+    # Admin/role tracking
+    is_group_admin = Column(Boolean, default=False)
+    custom_tags = Column(JSON, nullable=True, default=list)  # Admin-assigned tags
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<MemberProfile {self.username or self.user_id} ({self.platform})>"
+
+    def get_context_summary(self) -> str:
+        """Generate a brief context summary for Nanette (not to be volunteered)"""
+        parts = []
+        if self.username:
+            parts.append(f"Username: {self.username}")
+        if self.interests:
+            parts.append(f"Interests: {', '.join(self.interests[:5])}")
+        if self.topics_discussed:
+            parts.append(f"Topics discussed: {', '.join(self.topics_discussed[:5])}")
+        if self.notable_facts:
+            parts.append(f"Notable: {', '.join(self.notable_facts[:3])}")
+        if self.expertise_level:
+            parts.append(f"Expertise: {self.expertise_level}")
+        if self.message_count:
+            parts.append(f"Messages: {self.message_count}")
+        return " | ".join(parts) if parts else "New member"
+
+
 class DetectedClue(Base):
     """Tracks RIN clue detections from admin messages"""
     __tablename__ = 'detected_clues'

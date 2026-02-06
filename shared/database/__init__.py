@@ -12,7 +12,8 @@ from .models import (
     CreatorAnalysis,
     ServerConfig,
     ChannelMessage,
-    DetectedClue
+    DetectedClue,
+    MemberProfile
 )
 from .repository import (
     Database,
@@ -25,7 +26,8 @@ from .repository import (
     CreatorAnalysisRepository,
     ServerConfigRepository,
     ChannelMessageRepository,
-    DetectedClueRepository
+    DetectedClueRepository,
+    MemberProfileRepository
 )
 
 __all__ = [
@@ -40,6 +42,7 @@ __all__ = [
     'ServerConfig',
     'ChannelMessage',
     'DetectedClue',
+    'MemberProfile',
     'Database',
     'ProjectRepository',
     'ContractAnalysisRepository',
@@ -51,4 +54,5 @@ __all__ = [
     'ServerConfigRepository',
     'ChannelMessageRepository',
     'DetectedClueRepository',
+    'MemberProfileRepository',
 ]

@@ -20,7 +20,7 @@ from shared.database import (
     Database, ProjectRepository, ContractAnalysisRepository,
     InteractionAnalysisRepository, CreatorAnalysisRepository,
     ChannelMessageRepository, ServerConfigRepository,
-    DetectedClueRepository
+    DetectedClueRepository, MemberProfileRepository
 )
 from shared.config import settings
 
@@ -49,6 +49,7 @@ class AnalysisOrchestrator:
         self.channel_msg_repo = ChannelMessageRepository(self.db)
         self.config_repo = ServerConfigRepository(self.db)
         self.clue_repo = DetectedClueRepository(self.db)
+        self.member_repo = MemberProfileRepository(self.db)
 
     async def analyze_contract(self, contract_address: str, blockchain: str = "ethereum",
                               save_to_db: bool = True) -> Dict[str, Any]:
@@ -335,7 +336,8 @@ class AnalysisOrchestrator:
                                directly_addressed: bool = False,
                                image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                                file_name: Optional[str] = None, file_size: Optional[int] = None,
-                               analysis_mode: Optional[str] = None):
+                               analysis_mode: Optional[str] = None,
+                               user_id: Optional[str] = None, channel_id: Optional[str] = None):
         """
         Chat with Nanette
 
@@ -350,16 +352,60 @@ class AnalysisOrchestrator:
             file_name: Optional original filename for context
             file_size: Optional file size in bytes
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
+            user_id: Optional user ID for member profile tracking
+            channel_id: Optional channel/chat ID
 
         Returns:
             Dict with response and should_respond flag
         """
-        return await self.nanette.chat(
+        member_context = None
+
+        # Track member profile if we have user_id
+        if user_id:
+            try:
+                # Get or create member profile
+                profile = self.member_repo.get_or_create(
+                    user_id=user_id,
+                    platform='telegram',
+                    chat_id=channel_id,
+                    username=username
+                )
+
+                # Build context summary (Nanette knows but doesn't volunteer)
+                if profile:
+                    member_context = profile.get_context_summary()
+
+                    # Update activity (will mark interaction after response)
+                    self.member_repo.update_activity(
+                        user_id=user_id,
+                        platform='telegram',
+                        message_text=message,
+                        interacted_with_nanette=False  # Will update after response
+                    )
+            except Exception as e:
+                print(f"Error tracking member profile: {e}")
+
+        # Call Nanette with member context
+        result = await self.nanette.chat(
             message, conversation_history,
             username=username, is_group=is_group, directly_addressed=directly_addressed,
             image_base64=image_base64, image_media_type=image_media_type,
-            file_name=file_name, file_size=file_size, analysis_mode=analysis_mode
+            file_name=file_name, file_size=file_size, analysis_mode=analysis_mode,
+            member_context=member_context
         )
+
+        # If Nanette responded, update interaction count
+        if user_id and result.get('should_respond', True):
+            try:
+                self.member_repo.update_activity(
+                    user_id=user_id,
+                    platform='telegram',
+                    interacted_with_nanette=True
+                )
+            except Exception as e:
+                print(f"Error updating member interaction: {e}")
+
+        return result
 
     async def process_channel_message(
         self, message_data: Dict[str, Any]

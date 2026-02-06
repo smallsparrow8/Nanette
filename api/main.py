@@ -208,7 +208,9 @@ async def chat(request: ChatRequest):
             image_media_type=request.image_media_type,
             file_name=request.file_name,
             file_size=request.file_size,
-            analysis_mode=request.analysis_mode
+            analysis_mode=request.analysis_mode,
+            user_id=request.user_id,
+            channel_id=request.channel_id
         )
 
         # Handle both old (string) and new (dict) return formats

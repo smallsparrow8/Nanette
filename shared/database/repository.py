@@ -11,7 +11,8 @@ from .models import (
     Base, Project, ContractAnalysis, SocialMetric,
     AnalysisRequest, NanetteInteraction,
     InteractionAnalysis, CreatorAnalysis,
-    ServerConfig, ChannelMessage, DetectedClue
+    ServerConfig, ChannelMessage, DetectedClue,
+    MemberProfile
 )
 
 
@@ -615,3 +616,244 @@ class CreatorAnalysisRepository:
             return session.query(CreatorAnalysis).filter(
                 CreatorAnalysis.deployer_address == deployer_address.lower()
             ).order_by(desc(CreatorAnalysis.analyzed_at)).limit(limit).all()
+
+
+class MemberProfileRepository:
+    """Repository for MemberProfile — tracks community members"""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get_or_create(
+        self, user_id: str, platform: str = 'telegram',
+        chat_id: Optional[str] = None,
+        username: Optional[str] = None,
+        display_name: Optional[str] = None
+    ) -> MemberProfile:
+        """Get existing member profile or create a new one"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if profile:
+                # Update last seen and any changed info
+                profile.last_seen = datetime.utcnow()
+                if username and profile.username != username:
+                    profile.username = username
+                if display_name and profile.display_name != display_name:
+                    profile.display_name = display_name
+                if chat_id and not profile.chat_id:
+                    profile.chat_id = str(chat_id)
+                session.commit()
+                session.refresh(profile)
+                return profile
+
+            # Create new profile
+            profile = MemberProfile(
+                user_id=str(user_id),
+                platform=platform,
+                chat_id=str(chat_id) if chat_id else None,
+                username=username,
+                display_name=display_name,
+                topics_discussed=[],
+                interests=[],
+                notable_facts=[],
+                contracts_asked_about=[],
+                custom_tags=[]
+            )
+            session.add(profile)
+            session.commit()
+            session.refresh(profile)
+            return profile
+
+    def get(self, user_id: str, platform: str = 'telegram') -> Optional[MemberProfile]:
+        """Get a member profile by user ID"""
+        with self.db.get_session() as session:
+            return session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+    def update_activity(
+        self, user_id: str, platform: str = 'telegram',
+        message_text: Optional[str] = None,
+        interacted_with_nanette: bool = False
+    ) -> Optional[MemberProfile]:
+        """Update member activity metrics"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            profile.message_count = (profile.message_count or 0) + 1
+            profile.last_seen = datetime.utcnow()
+
+            if interacted_with_nanette:
+                profile.interaction_count = (profile.interaction_count or 0) + 1
+                profile.last_interaction = datetime.utcnow()
+
+            session.commit()
+            session.refresh(profile)
+            return profile
+
+    def add_topic(
+        self, user_id: str, topic: str, platform: str = 'telegram'
+    ) -> Optional[MemberProfile]:
+        """Add a topic to member's discussed topics"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            topics = profile.topics_discussed or []
+            if topic not in topics:
+                topics.append(topic)
+                # Keep only last 50 topics
+                profile.topics_discussed = topics[-50:]
+                session.commit()
+                session.refresh(profile)
+            return profile
+
+    def add_interest(
+        self, user_id: str, interest: str, platform: str = 'telegram'
+    ) -> Optional[MemberProfile]:
+        """Add an interest to member's profile"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            interests = profile.interests or []
+            if interest not in interests:
+                interests.append(interest)
+                # Keep only 20 interests
+                profile.interests = interests[-20:]
+                session.commit()
+                session.refresh(profile)
+            return profile
+
+    def add_notable_fact(
+        self, user_id: str, fact: str, platform: str = 'telegram'
+    ) -> Optional[MemberProfile]:
+        """Add a notable fact about a member"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            facts = profile.notable_facts or []
+            if fact not in facts:
+                facts.append(fact)
+                # Keep only 10 notable facts
+                profile.notable_facts = facts[-10:]
+                session.commit()
+                session.refresh(profile)
+            return profile
+
+    def add_contract_asked(
+        self, user_id: str, contract_address: str, platform: str = 'telegram'
+    ) -> Optional[MemberProfile]:
+        """Record that member asked about a contract"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            contracts = profile.contracts_asked_about or []
+            addr = contract_address.lower()
+            if addr not in contracts:
+                contracts.append(addr)
+                # Keep only last 30 contracts
+                profile.contracts_asked_about = contracts[-30:]
+                session.commit()
+                session.refresh(profile)
+            return profile
+
+    def update_insights(
+        self, user_id: str, platform: str = 'telegram',
+        communication_style: Optional[str] = None,
+        typical_sentiment: Optional[str] = None,
+        expertise_level: Optional[str] = None
+    ) -> Optional[MemberProfile]:
+        """Update personality insights for a member"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            if communication_style:
+                profile.communication_style = communication_style
+            if typical_sentiment:
+                profile.typical_sentiment = typical_sentiment
+            if expertise_level:
+                profile.expertise_level = expertise_level
+
+            session.commit()
+            session.refresh(profile)
+            return profile
+
+    def set_admin_status(
+        self, user_id: str, is_admin: bool, platform: str = 'telegram'
+    ) -> Optional[MemberProfile]:
+        """Update member's admin status"""
+        with self.db.get_session() as session:
+            profile = session.query(MemberProfile).filter_by(
+                user_id=str(user_id),
+                platform=platform
+            ).first()
+
+            if not profile:
+                return None
+
+            profile.is_group_admin = is_admin
+            session.commit()
+            session.refresh(profile)
+            return profile
+
+    def get_active_members(
+        self, chat_id: str, limit: int = 50
+    ) -> List[MemberProfile]:
+        """Get most active members in a chat"""
+        with self.db.get_session() as session:
+            return session.query(MemberProfile).filter_by(
+                chat_id=str(chat_id)
+            ).order_by(
+                desc(MemberProfile.message_count)
+            ).limit(limit).all()
+
+    def get_recent_interactors(
+        self, limit: int = 20
+    ) -> List[MemberProfile]:
+        """Get members who recently interacted with Nanette"""
+        with self.db.get_session() as session:
+            return session.query(MemberProfile).filter(
+                MemberProfile.last_interaction.isnot(None)
+            ).order_by(
+                desc(MemberProfile.last_interaction)
+            ).limit(limit).all()
