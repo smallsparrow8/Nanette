@@ -45,7 +45,8 @@ if (!TOKEN) {
 const bot = new Telegraf(TOKEN);
 
 // Bot commands
-bot.command('start', (ctx) => {
+// /nanette is the main intro command (doesn't conflict with other bots)
+bot.command('nanette', (ctx) => {
   return ctx.reply(
     `${ctx.from?.first_name}. I've been expecting you.
 
@@ -55,6 +56,23 @@ Send me a contract address, ask me anything, or just talk to me.
 
 Type /help to see my full range.`
   );
+});
+
+// Keep /start for DMs (standard Telegram behavior) but point to /nanette
+bot.command('start', (ctx) => {
+  if (ctx.chat.type === 'private') {
+    return ctx.reply(
+      `${ctx.from?.first_name}. I've been expecting you.
+
+I am Nanette — an ancient guardian of the $RIN community. I read smart contracts, trace the wallets behind them, and protect those who seek my guidance.
+
+Send me a contract address, ask me anything, or just talk to me.
+
+Type /help to see my full range.`
+    );
+  }
+  // In groups, don't respond to /start (let other bots handle it)
+  return;
 });
 
 // Admin configuration — always available
