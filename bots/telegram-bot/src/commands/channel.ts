@@ -5,68 +5,31 @@ import { isUserAdmin } from '../utils/adminCache';
 const API_URL = process.env.API_URL || 'http://localhost:8000';
 
 /**
- * Check if a message warrants Nanette's engagement
- * Returns engagement level: 'direct' (always respond), 'natural' (contextual), or null
+ * Check if Nanette is directly addressed (must always respond)
  */
-function detectEngagement(ctx: Context, text: string): 'direct' | 'natural' | null {
+function isDirectlyAddressed(ctx: Context, text: string): boolean {
   const lowerText = text.toLowerCase();
 
-  // DIRECT ENGAGEMENT — always respond
   // Name mentions
-  if (lowerText.includes('nanette')) return 'direct';
+  if (lowerText.includes('nanette')) return true;
 
   // @mention of the bot
   const botUsername = ctx.botInfo?.username?.toLowerCase();
-  if (botUsername && lowerText.includes(`@${botUsername}`)) return 'direct';
+  if (botUsername && lowerText.includes(`@${botUsername}`)) return true;
 
   // Reply to Nanette's message
   const msg = ctx.message as any;
   if (msg?.reply_to_message?.from?.is_bot) {
     const replyToBotId = msg.reply_to_message.from.id;
-    if (replyToBotId === ctx.botInfo?.id) return 'direct';
+    if (replyToBotId === ctx.botInfo?.id) return true;
   }
 
-  // NATURAL ENGAGEMENT — join conversation naturally
-  const isQuestion = text.includes('?') ||
-    /^(who|what|where|when|why|how|is|are|can|should|does|do|will|would)\b/i.test(text.trim());
-
-  // Questions about crypto/blockchain topics
-  const cryptoTerms = [
-    'crypto', 'blockchain', 'defi', 'nft', 'web3',
-    'contract', 'token', 'wallet', 'address', 'scam', 'rug',
-    'honeypot', 'liquidity', 'dex', 'swap', 'eth', 'sol', 'btc',
-    'safe', 'legit', 'trust', 'audit', 'verify', 'check',
-    '0x', 'ca ', 'mint', 'airdrop', 'presale', 'launch',
-    'price', 'pump', 'dump', 'moon', 'bear', 'bull',
-    'rin', '$rin', 'rintintin',
-  ];
-
-  if (isQuestion && cryptoTerms.some(term => lowerText.includes(term))) {
-    return 'natural';
-  }
-
-  // Any question directed at the conversation (general engagement)
-  if (isQuestion) {
-    return 'natural';
-  }
-
-  // Contract addresses posted (likely wanting analysis)
-  if (/0x[a-fA-F0-9]{40}/.test(text)) {
-    return 'natural';
-  }
-
-  // Social engagement / greetings directed at conversation
-  if (/\b(welcome|hello|hi|hey|gm|gn|good morning|good night|thanks|thank you)\b/i.test(text)) {
-    return 'natural';
-  }
-
-  return null;
+  return false;
 }
 
 /**
  * Handle a text message from a group/supergroup chat.
- * Routes messages directed at Nanette to the chat API for response.
- * Other messages go to channel analysis for logging/monitoring.
+ * Nanette reads all messages and decides naturally when to engage.
  */
 export async function handleGroupMessage(ctx: Context) {
   if (!ctx.message || !('text' in ctx.message)) return;
@@ -84,48 +47,45 @@ export async function handleGroupMessage(ctx: Context) {
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
 
-  // Detect engagement level
-  const engagement = detectEngagement(ctx, text);
+  // Check if directly addressed (must respond)
+  const directlyAddressed = isDirectlyAddressed(ctx, text);
 
-  if (engagement) {
-    // Engage with the conversation
-    try {
-      // For natural engagement, add context hint so Nanette responds conversationally
-      const messageToSend = engagement === 'natural'
-        ? `[Group conversation - join naturally if you can help]\n${text}`
-        : text;
+  // Send to API — Nanette decides whether to engage
+  try {
+    const response = await axios.post(
+      `${API_URL}/chat`,
+      {
+        message: text,
+        conversation_history: [],
+        user_id: userId ? String(userId) : null,
+        channel_id: String(chatId),
+        username: username,
+        is_group: true,
+        directly_addressed: directlyAddressed,
+      },
+      { timeout: 60000 }
+    );
 
-      const response = await axios.post(
-        `${API_URL}/chat`,
-        {
-          message: messageToSend,
-          conversation_history: [],
-          user_id: userId ? String(userId) : null,
-          channel_id: String(chatId),
+    const result = response.data;
+
+    // Only reply if Nanette decided to respond
+    if (result.response && result.should_respond !== false) {
+      await ctx.reply(result.response, {
+        parse_mode: 'Markdown',
+        reply_parameters: {
+          message_id: messageId,
         },
-        { timeout: 60000 }
-      );
-
-      const result = response.data;
-
-      if (result.response) {
-        await ctx.reply(result.response, {
-          parse_mode: 'Markdown',
-          reply_parameters: {
-            message_id: messageId,
-          },
-        });
-      }
-    } catch (error: any) {
-      if (error.code !== 'ECONNREFUSED') {
-        console.error(
-          `Channel direct message error (chat ${chatId}):`,
-          error.message
-        );
-      }
+      });
     }
-    return;
+  } catch (error: any) {
+    if (error.code !== 'ECONNREFUSED') {
+      console.error(
+        `Channel message error (chat ${chatId}):`,
+        error.message
+      );
+    }
   }
+  return;
 
   // Background channel analysis for non-directed messages
   // Check if user is admin
@@ -319,7 +279,7 @@ function detectAnalysisMode(text: string): string | undefined {
 /**
  * Handle any media message from a group/supergroup chat.
  * Downloads the media, converts to base64, and sends to the Python backend.
- * Only responds when directly engaged (name in caption, reply to bot, @mention).
+ * Nanette decides naturally when to engage with media.
  */
 export async function handleGroupMediaMessage(ctx: Context) {
   const fileInfo = getFileInfo(ctx);
@@ -330,12 +290,10 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const chatId = ctx.chat.id;
   const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
+  const username = ctx.from?.username || ctx.from?.first_name || 'Unknown';
 
-  // Only respond if there's engagement (direct or natural)
-  const engagement = detectEngagement(ctx, caption);
-  if (!engagement) {
-    return;
-  }
+  // Check if directly addressed
+  const directlyAddressed = isDirectlyAddressed(ctx, caption);
 
   try {
     // Download the file
@@ -348,7 +306,7 @@ export async function handleGroupMediaMessage(ctx: Context) {
     // Detect analysis mode from caption
     const analysisMode = detectAnalysisMode(caption);
 
-    // Send to chat API with media
+    // Send to chat API with media — Nanette decides whether to engage
     const response = await axios.post(
       `${API_URL}/chat`,
       {
@@ -356,6 +314,9 @@ export async function handleGroupMediaMessage(ctx: Context) {
         conversation_history: [],
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
+        username: username,
+        is_group: true,
+        directly_addressed: directlyAddressed,
         image_base64: fileBase64,
         image_media_type: fileInfo.mimeType,
         file_name: fileInfo.fileName,
@@ -367,7 +328,8 @@ export async function handleGroupMediaMessage(ctx: Context) {
 
     const result = response.data;
 
-    if (result.response) {
+    // Only reply if Nanette decided to respond
+    if (result.response && result.should_respond !== false) {
       await ctx.reply(result.response, {
         parse_mode: 'Markdown',
         reply_parameters: {

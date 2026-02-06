@@ -110,6 +110,9 @@ class ChatRequest(BaseModel):
     conversation_history: Optional[list] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    username: Optional[str] = None
+    is_group: bool = False
+    directly_addressed: bool = False
     image_base64: Optional[str] = None
     image_media_type: Optional[str] = None
     file_name: Optional[str] = None
@@ -192,12 +195,15 @@ async def chat(request: ChatRequest):
         request: Chat request with message
 
     Returns:
-        Nanette's response
+        Nanette's response and whether she chose to respond
     """
     try:
-        response = await orchestrator.chat_with_nanette(
+        result = await orchestrator.chat_with_nanette(
             message=request.message or "",
             conversation_history=request.conversation_history,
+            username=request.username,
+            is_group=request.is_group,
+            directly_addressed=request.directly_addressed,
             image_base64=request.image_base64,
             image_media_type=request.image_media_type,
             file_name=request.file_name,
@@ -205,7 +211,10 @@ async def chat(request: ChatRequest):
             analysis_mode=request.analysis_mode
         )
 
-        return {"response": response}
+        # Handle both old (string) and new (dict) return formats
+        if isinstance(result, dict):
+            return result
+        return {"response": result, "should_respond": True}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

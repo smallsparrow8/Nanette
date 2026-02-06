@@ -331,15 +331,20 @@ class AnalysisOrchestrator:
             }
 
     async def chat_with_nanette(self, message: str, conversation_history: Optional[list] = None,
+                               username: Optional[str] = None, is_group: bool = False,
+                               directly_addressed: bool = False,
                                image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                                file_name: Optional[str] = None, file_size: Optional[int] = None,
-                               analysis_mode: Optional[str] = None) -> str:
+                               analysis_mode: Optional[str] = None):
         """
         Chat with Nanette
 
         Args:
             message: User message
             conversation_history: Optional conversation history
+            username: Optional username of the person messaging
+            is_group: Whether this is a group chat message
+            directly_addressed: Whether Nanette was directly addressed
             image_base64: Optional base64-encoded image data
             image_media_type: Optional MIME type of the image
             file_name: Optional original filename for context
@@ -347,10 +352,11 @@ class AnalysisOrchestrator:
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
 
         Returns:
-            Nanette's response
+            Dict with response and should_respond flag
         """
         return await self.nanette.chat(
             message, conversation_history,
+            username=username, is_group=is_group, directly_addressed=directly_addressed,
             image_base64=image_base64, image_media_type=image_media_type,
             file_name=file_name, file_size=file_size, analysis_mode=analysis_mode
         )

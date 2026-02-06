@@ -103,15 +103,20 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             return self._generate_fallback_response(analysis_results)
 
     async def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None,
+                   username: Optional[str] = None, is_group: bool = False,
+                   directly_addressed: bool = False,
                    image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                    file_name: Optional[str] = None, file_size: Optional[int] = None,
-                   analysis_mode: Optional[str] = None) -> str:
+                   analysis_mode: Optional[str] = None):
         """
         General chat with Nanette with tool support and optional media analysis
 
         Args:
             user_message: User's message
             conversation_history: Optional conversation history
+            username: Optional username of sender
+            is_group: Whether this is a group chat
+            directly_addressed: Whether Nanette was directly addressed
             image_base64: Optional base64-encoded media data (images, documents, etc.)
             image_media_type: Optional MIME type of the media
             file_name: Optional original filename for context
@@ -119,9 +124,16 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
 
         Returns:
-            Nanette's response
+            Dict with 'response' and 'should_respond'
         """
         messages = conversation_history or []
+
+        # For group chats where not directly addressed, let Nanette decide if she should engage
+        if is_group and not directly_addressed:
+            return await self._decide_group_engagement(
+                user_message, username, image_base64, image_media_type,
+                file_name, file_size, analysis_mode
+            )
 
         # Check if user is asking for information that requires tools (text only)
         tool_context = None
@@ -236,11 +248,82 @@ Examples:
                 messages=messages
             )
 
-            return response.content[0].text
+            return {"response": response.content[0].text, "should_respond": True}
 
         except Exception as e:
             print(f"Error calling Claude API: {e}")
-            return "Something's interfering with my senses right now. Give me a moment and try again."
+            return {"response": "Something's interfering with my senses right now. Give me a moment and try again.", "should_respond": True}
+
+    async def _decide_group_engagement(self, user_message: str, username: Optional[str] = None,
+                                       image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
+                                       file_name: Optional[str] = None, file_size: Optional[int] = None,
+                                       analysis_mode: Optional[str] = None):
+        """
+        Decide if Nanette should engage with a group message she wasn't directly addressed in.
+        Let her read the conversation naturally and decide when to contribute.
+        """
+        # Build context about the message
+        context_parts = []
+        if username:
+            context_parts.append(f"From: {username}")
+        if file_name:
+            context_parts.append(f"Shared file: {file_name}")
+        context = "\n".join(context_parts) if context_parts else ""
+
+        # Build the decision prompt
+        decision_prompt = f"""You are Nanette in a group chat. Someone just posted this message (they did NOT directly address you):
+
+{context}
+Message: {user_message}
+
+As a natural member of the community, decide if you should respond. Consider:
+- Is this something you can genuinely help with or add value to?
+- Would a response feel natural, not forced or intrusive?
+- Are they asking a question the group might benefit from your knowledge on?
+- Is there a crypto/contract topic you have insight on?
+- Would you naturally chime in if you were a person in this group?
+
+If you decide to respond, write your natural response.
+If you decide NOT to respond, just write exactly: [NO_RESPONSE]
+
+Remember: Don't respond to everything. Only engage when it feels natural and valuable. Quality over quantity."""
+
+        try:
+            # Build content for the API call
+            content = []
+
+            # Add image if present
+            viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            if image_base64 and image_media_type in viewable_types:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_media_type,
+                        "data": image_base64,
+                    }
+                })
+
+            content.append({"type": "text", "text": decision_prompt})
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                system=self.system_prompt,
+                messages=[{"role": "user", "content": content}]
+            )
+
+            response_text = response.content[0].text.strip()
+
+            # Check if Nanette decided not to respond
+            if "[NO_RESPONSE]" in response_text or response_text == "[NO_RESPONSE]":
+                return {"response": None, "should_respond": False}
+
+            return {"response": response_text, "should_respond": True}
+
+        except Exception as e:
+            print(f"Error in group engagement decision: {e}")
+            return {"response": None, "should_respond": False}
 
     async def _check_and_use_tools(self, message: str) -> Optional[str]:
         """
