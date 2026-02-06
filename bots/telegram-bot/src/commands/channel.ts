@@ -27,17 +27,26 @@ function detectEngagement(ctx: Context, text: string): 'direct' | 'natural' | nu
   }
 
   // NATURAL ENGAGEMENT — join conversation naturally
-  // Questions about crypto/contracts/wallets
-  const cryptoTerms = [
-    'contract', 'token', 'wallet', 'address', 'scam', 'rug',
-    'honeypot', 'liquidity', 'dex', 'swap', 'eth', 'sol',
-    'safe', 'legit', 'trust', 'audit', 'verify', 'check',
-    '0x', 'ca ', 'mint', 'airdrop', 'presale', 'launch',
-  ];
   const isQuestion = text.includes('?') ||
     /^(who|what|where|when|why|how|is|are|can|should|does|do|will|would)\b/i.test(text.trim());
 
+  // Questions about crypto/blockchain topics
+  const cryptoTerms = [
+    'crypto', 'blockchain', 'defi', 'nft', 'web3',
+    'contract', 'token', 'wallet', 'address', 'scam', 'rug',
+    'honeypot', 'liquidity', 'dex', 'swap', 'eth', 'sol', 'btc',
+    'safe', 'legit', 'trust', 'audit', 'verify', 'check',
+    '0x', 'ca ', 'mint', 'airdrop', 'presale', 'launch',
+    'price', 'pump', 'dump', 'moon', 'bear', 'bull',
+    'rin', '$rin', 'rintintin',
+  ];
+
   if (isQuestion && cryptoTerms.some(term => lowerText.includes(term))) {
+    return 'natural';
+  }
+
+  // Any question directed at the conversation (general engagement)
+  if (isQuestion) {
     return 'natural';
   }
 
@@ -46,8 +55,8 @@ function detectEngagement(ctx: Context, text: string): 'direct' | 'natural' | nu
     return 'natural';
   }
 
-  // Calls for help or advice
-  if (isQuestion && /\b(help|advice|opinion|think|know|anyone|somebody)\b/i.test(text)) {
+  // Social engagement / greetings directed at conversation
+  if (/\b(welcome|hello|hi|hey|gm|gn|good morning|good night|thanks|thank you)\b/i.test(text)) {
     return 'natural';
   }
 
