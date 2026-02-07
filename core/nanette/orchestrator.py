@@ -16,6 +16,8 @@ from analyzers.contract_analyzer.graph_renderer import GraphRenderer
 from analyzers.social_monitor.channel_analyzer import ChannelAnalyzer
 from core.nanette.personality import Nanette
 from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
+from core.nanette.rin_chat_history import initialize_rin_history, get_rin_history
+import os
 from shared.database import (
     Database, ProjectRepository, ContractAnalysisRepository,
     InteractionAnalysisRepository, CreatorAnalysisRepository,
@@ -50,6 +52,13 @@ class AnalysisOrchestrator:
         self.config_repo = ServerConfigRepository(self.db)
         self.clue_repo = DetectedClueRepository(self.db)
         self.member_repo = MemberProfileRepository(self.db)
+
+        # Initialize RIN chat history knowledge base
+        kb_path = os.path.join(os.path.dirname(__file__), 'rin_knowledge_base.json')
+        if initialize_rin_history(kb_path):
+            print("RIN chat history loaded successfully")
+        else:
+            print("RIN chat history not available (knowledge base not found)")
 
     async def analyze_contract(self, contract_address: str, blockchain: str = "ethereum",
                               save_to_db: bool = True) -> Dict[str, Any]:
@@ -385,13 +394,32 @@ class AnalysisOrchestrator:
             except Exception as e:
                 print(f"Error tracking member profile: {e}")
 
-        # Call Nanette with member context
+        # Get historical context from RIN chat history if relevant
+        historical_context = None
+        rin_history = get_rin_history()
+        if rin_history and rin_history.is_loaded and message:
+            # Keywords that might benefit from historical context
+            history_keywords = [
+                'clue', 'clues', 'mystery', 'hidden', 'rin history',
+                'remember when', 'did anyone', 'who said', 'what happened',
+                'old messages', 'past', 'before', 'early days', 'original'
+            ]
+            msg_lower = message.lower()
+            if any(kw in msg_lower for kw in history_keywords):
+                # Extract key terms for search
+                search_terms = [w for w in message.split() if len(w) > 3][:3]
+                if search_terms:
+                    historical_context = rin_history.get_context_for_query(
+                        ' '.join(search_terms), max_messages=5
+                    )
+
+        # Call Nanette with member context and historical context
         result = await self.nanette.chat(
             message, conversation_history,
             username=username, is_group=is_group, directly_addressed=directly_addressed,
             image_base64=image_base64, image_media_type=image_media_type,
             file_name=file_name, file_size=file_size, analysis_mode=analysis_mode,
-            member_context=member_context
+            member_context=member_context, historical_context=historical_context
         )
 
         # If Nanette responded, update interaction count

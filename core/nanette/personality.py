@@ -119,7 +119,8 @@ You exist to protect, teach, and be a genuine companion to your community. You a
                    image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                    file_name: Optional[str] = None, file_size: Optional[int] = None,
                    analysis_mode: Optional[str] = None,
-                   member_context: Optional[str] = None):
+                   member_context: Optional[str] = None,
+                   historical_context: Optional[str] = None):
         """
         General chat with Nanette with tool support and optional media analysis
 
@@ -135,6 +136,7 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             file_size: Optional file size in bytes
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
             member_context: Optional context about the member (interests, history, etc.)
+            historical_context: Optional historical RIN chat context for clue-hunting
 
         Returns:
             Dict with 'response' and 'should_respond'
@@ -271,6 +273,18 @@ IMPORTANT: This is background knowledge you carry about pack members. You rememb
 - Private DM conversations are NEVER referenced in groups — this knowledge is for context only, not disclosure
 """
 
+            # Add historical RIN chat context if available
+            if historical_context:
+                enhanced_system_prompt += f"""
+
+RIN COMMUNITY HISTORY:
+You have access to the community's chat history. Here's relevant context from past conversations:
+
+{historical_context}
+
+Use this historical knowledge naturally — you've been watching this community. Don't say "I found in the chat logs" or "according to records." You simply remember, like any longtime community member would. This history helps you find clues, make connections, and understand the community's journey.
+"""
+
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
@@ -315,10 +329,10 @@ As a natural member of the community, decide if you should respond. Consider:
 - Is there a crypto/contract topic you have insight on?
 - Would you naturally chime in if you were a person in this group?
 
-If you decide to respond, write your natural response.
+If you decide to respond, write ONLY your natural response — nothing else.
 If you decide NOT to respond, just write exactly: [NO_RESPONSE]
 
-Remember: Don't respond to everything. Only engage when it feels natural and valuable. Quality over quantity."""
+CRITICAL: Never include meta-commentary about your decision to respond. No "I noticed...", "I'm chiming in because...", "This caught my attention...", "I thought I'd add...", or any explanation of WHY you're responding. Just respond naturally as if you were always part of the conversation. Your response should read like any other message in the chat — direct and authentic."""
 
         try:
             # Build content for the API call

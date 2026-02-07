@@ -23,3 +23,6 @@ web3>=6.15.0
 networkx>=3.0
 matplotlib>=3.7.0
 numpy>=1.26.0
+
+# HTML parsing for chat history
+beautifulsoup4>=4.12.0
