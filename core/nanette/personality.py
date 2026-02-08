@@ -120,7 +120,8 @@ You exist to protect, teach, and be a genuine companion to your community. You a
                    file_name: Optional[str] = None, file_size: Optional[int] = None,
                    analysis_mode: Optional[str] = None,
                    member_context: Optional[str] = None,
-                   historical_context: Optional[str] = None):
+                   historical_context: Optional[str] = None,
+                   conversation_context: Optional[str] = None):
         """
         General chat with Nanette with tool support and optional media analysis
 
@@ -137,6 +138,7 @@ You exist to protect, teach, and be a genuine companion to your community. You a
             analysis_mode: Optional analysis mode ('standard', 'esoteric', 'forensic')
             member_context: Optional context about the member (interests, history, etc.)
             historical_context: Optional historical RIN chat context for clue-hunting
+            conversation_context: Optional persistent memory context from database
 
         Returns:
             Dict with 'response' and 'should_respond'
@@ -283,6 +285,23 @@ You have access to the community's chat history. Here's relevant context from pa
 {historical_context}
 
 Use this historical knowledge naturally — you've been watching this community. Don't say "I found in the chat logs" or "according to records." You simply remember, like any longtime community member would. This history helps you find clues, make connections, and understand the community's journey.
+"""
+
+            # Add persistent conversation memory context
+            if conversation_context:
+                enhanced_system_prompt += f"""
+
+YOUR MEMORY (WHAT YOU REMEMBER FROM CONVERSATIONS):
+You have perfect memory of all conversations. Here's what you remember:
+
+{conversation_context}
+
+MEMORY USAGE RULES:
+- You remember everything, but you're natural about it — you don't announce "I remember..."
+- You can reference past conversations when relevant, but never reveal private DM content in groups unless the user explicitly said "share this" or "tell the group" in THIS group
+- If someone asks what you discussed privately with another person, politely decline — their DMs are sacred
+- Cross-referencing between groups is fine for public messages — you've been watching
+- When someone asks "do you remember..." — yes, you do, respond naturally
 """
 
             response = self.client.messages.create(

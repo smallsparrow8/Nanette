@@ -12,6 +12,8 @@ export async function handleChatMessage(ctx: Context) {
   const userMessage = ctx.message.text;
   const chatId = ctx.chat!.id;
   const userId = ctx.from!.id;
+  const messageId = ctx.message.message_id;
+  const username = ctx.from?.username || ctx.from?.first_name || 'Unknown';
 
   if (!userMessage) {
     return ctx.reply('I\'m here. What do you need?');
@@ -29,7 +31,7 @@ export async function handleChatMessage(ctx: Context) {
       history = history.slice(-20);
     }
 
-    // Call chat API
+    // Call chat API (DMs are private, not groups)
     const response = await axios.post(
       `${API_URL}/chat`,
       {
@@ -37,6 +39,11 @@ export async function handleChatMessage(ctx: Context) {
         conversation_history: history,
         user_id: userId.toString(),
         channel_id: chatId.toString(),
+        channel_title: null, // DMs don't have a title
+        username: username,
+        message_id: messageId.toString(),
+        is_group: false,
+        directly_addressed: true, // DMs are always directly addressed
       },
       {
         timeout: 60000, // 1 minute timeout
@@ -253,6 +260,8 @@ export async function handleChatMediaMessage(ctx: Context) {
 
   const chatId = ctx.chat!.id;
   const userId = ctx.from!.id;
+  const messageId = ctx.message!.message_id;
+  const username = ctx.from?.username || ctx.from?.first_name || 'Unknown';
   const caption = ('caption' in ctx.message! ? (ctx.message as any).caption : '') || '';
 
   // Show typing action
@@ -275,7 +284,7 @@ export async function handleChatMediaMessage(ctx: Context) {
     // Detect analysis mode from caption
     const analysisMode = detectAnalysisMode(caption);
 
-    // Call chat API with media
+    // Call chat API with media (DMs are private, not groups)
     const response = await axios.post(
       `${API_URL}/chat`,
       {
@@ -283,6 +292,11 @@ export async function handleChatMediaMessage(ctx: Context) {
         conversation_history: history,
         user_id: userId.toString(),
         channel_id: chatId.toString(),
+        channel_title: null, // DMs don't have a title
+        username: username,
+        message_id: messageId.toString(),
+        is_group: false,
+        directly_addressed: true,
         image_base64: fileBase64,
         image_media_type: fileInfo.mimeType,
         file_name: fileInfo.fileName,

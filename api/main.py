@@ -110,7 +110,9 @@ class ChatRequest(BaseModel):
     conversation_history: Optional[list] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    channel_title: Optional[str] = None  # Group name or None for DMs
     username: Optional[str] = None
+    message_id: Optional[str] = None
     is_group: bool = False
     directly_addressed: bool = False
     image_base64: Optional[str] = None
@@ -118,6 +120,33 @@ class ChatRequest(BaseModel):
     file_name: Optional[str] = None
     file_size: Optional[int] = None
     analysis_mode: Optional[str] = None  # 'standard', 'esoteric', 'forensic'
+
+
+class StoreMessageRequest(BaseModel):
+    chat_id: str
+    user_id: str
+    role: str  # 'user' or 'assistant'
+    content: str
+    username: Optional[str] = None
+    chat_title: Optional[str] = None
+    message_id: Optional[str] = None
+    is_private_dm: bool = False
+    is_group: bool = False
+    has_media: bool = False
+    media_type: Optional[str] = None
+    platform: str = "telegram"
+
+
+class GrantDMShareRequest(BaseModel):
+    user_id: str
+    target_chat_id: str
+
+
+class GetMemoryContextRequest(BaseModel):
+    user_id: str
+    chat_id: str
+    include_dms: bool = False
+    limit: int = 50
 
 
 @app.get("/")
@@ -467,6 +496,71 @@ async def greet():
 async def help_message():
     """Get help message"""
     return {"message": orchestrator.get_help()}
+
+
+# Memory endpoints for persistent conversation storage
+@app.post("/memory/store")
+async def store_message(request: StoreMessageRequest):
+    """Store a message in Nanette's persistent memory"""
+    try:
+        memory = orchestrator.store_memory(
+            chat_id=request.chat_id,
+            user_id=request.user_id,
+            role=request.role,
+            content=request.content,
+            username=request.username,
+            chat_title=request.chat_title,
+            message_id=request.message_id,
+            is_private_dm=request.is_private_dm,
+            is_group=request.is_group,
+            has_media=request.has_media,
+            media_type=request.media_type,
+            platform=request.platform
+        )
+        return {"success": True, "memory_id": memory.id if memory else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memory/grant-dm-share")
+async def grant_dm_share(request: GrantDMShareRequest):
+    """Grant permission to share DMs in a specific group"""
+    try:
+        count = orchestrator.grant_dm_share_permission(
+            user_id=request.user_id,
+            target_chat_id=request.target_chat_id
+        )
+        return {"success": True, "messages_updated": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memory/revoke-dm-share")
+async def revoke_dm_share(request: GrantDMShareRequest):
+    """Revoke permission to share DMs in a specific group"""
+    try:
+        count = orchestrator.revoke_dm_share_permission(
+            user_id=request.user_id,
+            target_chat_id=request.target_chat_id
+        )
+        return {"success": True, "messages_updated": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memory/context")
+async def get_memory_context(request: GetMemoryContextRequest):
+    """Get conversation context for a user in a chat"""
+    try:
+        context = orchestrator.get_memory_context(
+            user_id=request.user_id,
+            chat_id=request.chat_id,
+            include_dms=request.include_dms,
+            limit=request.limit
+        )
+        return {"success": True, "context": context}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

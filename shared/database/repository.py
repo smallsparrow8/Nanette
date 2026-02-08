@@ -12,7 +12,7 @@ from .models import (
     AnalysisRequest, NanetteInteraction,
     InteractionAnalysis, CreatorAnalysis,
     ServerConfig, ChannelMessage, DetectedClue,
-    MemberProfile
+    MemberProfile, ConversationMemory
 )
 
 
@@ -857,3 +857,224 @@ class MemberProfileRepository:
             ).order_by(
                 desc(MemberProfile.last_interaction)
             ).limit(limit).all()
+
+
+class ConversationMemoryRepository:
+    """
+    Repository for ConversationMemory — Nanette's persistent memory.
+    Stores all conversations with privacy controls for DM sharing.
+    """
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def store_message(
+        self, chat_id: str, user_id: str, role: str, content: str,
+        username: Optional[str] = None, chat_title: Optional[str] = None,
+        message_id: Optional[str] = None, is_private_dm: bool = False,
+        is_group: bool = False, has_media: bool = False,
+        media_type: Optional[str] = None, platform: str = 'telegram'
+    ) -> ConversationMemory:
+        """Store a message in Nanette's memory"""
+        with self.db.get_session() as session:
+            memory = ConversationMemory(
+                chat_id=str(chat_id),
+                chat_title=chat_title,
+                user_id=str(user_id),
+                username=username,
+                platform=platform,
+                message_id=str(message_id) if message_id else None,
+                role=role,
+                content=content[:10000],  # Limit content length
+                is_private_dm=is_private_dm,
+                is_group=is_group,
+                has_media=has_media,
+                media_type=media_type,
+                dm_share_permissions=[]
+            )
+            session.add(memory)
+            session.commit()
+            session.refresh(memory)
+            return memory
+
+    def get_chat_history(
+        self, chat_id: str, limit: int = 50
+    ) -> List[ConversationMemory]:
+        """Get recent conversation history for a specific chat"""
+        with self.db.get_session() as session:
+            return session.query(ConversationMemory).filter_by(
+                chat_id=str(chat_id)
+            ).order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit).all()[::-1]  # Reverse to get chronological order
+
+    def get_user_history(
+        self, user_id: str, limit: int = 100, include_private: bool = True
+    ) -> List[ConversationMemory]:
+        """Get all conversation history for a user across all chats"""
+        with self.db.get_session() as session:
+            query = session.query(ConversationMemory).filter_by(
+                user_id=str(user_id)
+            )
+            if not include_private:
+                query = query.filter_by(is_private_dm=False)
+            return query.order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit).all()[::-1]
+
+    def get_user_dms(
+        self, user_id: str, limit: int = 50
+    ) -> List[ConversationMemory]:
+        """Get a user's private DM history with Nanette"""
+        with self.db.get_session() as session:
+            return session.query(ConversationMemory).filter_by(
+                user_id=str(user_id),
+                is_private_dm=True
+            ).order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit).all()[::-1]
+
+    def get_shareable_user_dms(
+        self, user_id: str, target_chat_id: str, limit: int = 20
+    ) -> List[ConversationMemory]:
+        """Get DMs that user has given permission to share in a specific chat"""
+        with self.db.get_session() as session:
+            # Get all DMs and filter by share permission
+            dms = session.query(ConversationMemory).filter_by(
+                user_id=str(user_id),
+                is_private_dm=True
+            ).order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit * 2).all()
+
+            # Filter by permission
+            shareable = [
+                dm for dm in dms
+                if dm.dm_share_permissions and
+                   target_chat_id in dm.dm_share_permissions
+            ]
+            return shareable[:limit][::-1]
+
+    def grant_dm_share_permission(
+        self, user_id: str, target_chat_id: str
+    ) -> int:
+        """Grant permission to share all user's DMs in a specific chat"""
+        with self.db.get_session() as session:
+            dms = session.query(ConversationMemory).filter_by(
+                user_id=str(user_id),
+                is_private_dm=True
+            ).all()
+
+            count = 0
+            for dm in dms:
+                permissions = dm.dm_share_permissions or []
+                if target_chat_id not in permissions:
+                    permissions.append(target_chat_id)
+                    dm.dm_share_permissions = permissions
+                    count += 1
+
+            session.commit()
+            return count
+
+    def revoke_dm_share_permission(
+        self, user_id: str, target_chat_id: str
+    ) -> int:
+        """Revoke permission to share user's DMs in a specific chat"""
+        with self.db.get_session() as session:
+            dms = session.query(ConversationMemory).filter_by(
+                user_id=str(user_id),
+                is_private_dm=True
+            ).all()
+
+            count = 0
+            for dm in dms:
+                permissions = dm.dm_share_permissions or []
+                if target_chat_id in permissions:
+                    permissions.remove(target_chat_id)
+                    dm.dm_share_permissions = permissions
+                    count += 1
+
+            session.commit()
+            return count
+
+    def search_memories(
+        self, query: str, chat_id: Optional[str] = None,
+        user_id: Optional[str] = None, limit: int = 20
+    ) -> List[ConversationMemory]:
+        """Search conversation memories by content"""
+        with self.db.get_session() as session:
+            q = session.query(ConversationMemory).filter(
+                ConversationMemory.content.ilike(f'%{query}%')
+            )
+            if chat_id:
+                q = q.filter_by(chat_id=str(chat_id))
+            if user_id:
+                q = q.filter_by(user_id=str(user_id))
+
+            return q.order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit).all()
+
+    def get_cross_chat_context(
+        self, user_id: str, current_chat_id: str, limit: int = 30
+    ) -> List[ConversationMemory]:
+        """
+        Get user's history from other chats (for cross-referencing).
+        Only includes group messages - never DMs unless explicitly shared.
+        """
+        with self.db.get_session() as session:
+            # Get group messages from other chats
+            other_group_msgs = session.query(ConversationMemory).filter(
+                ConversationMemory.user_id == str(user_id),
+                ConversationMemory.chat_id != str(current_chat_id),
+                ConversationMemory.is_private_dm == False
+            ).order_by(
+                desc(ConversationMemory.created_at)
+            ).limit(limit).all()
+
+            # Get shareable DMs for this chat
+            shareable_dms = self.get_shareable_user_dms(
+                user_id, current_chat_id, limit=10
+            )
+
+            # Combine and sort by date
+            all_msgs = other_group_msgs + shareable_dms
+            all_msgs.sort(key=lambda m: m.created_at, reverse=True)
+            return all_msgs[:limit][::-1]
+
+    def get_recent_group_activity(
+        self, chat_id: str, hours: int = 24, limit: int = 100
+    ) -> List[ConversationMemory]:
+        """Get recent activity in a group for context"""
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        with self.db.get_session() as session:
+            return session.query(ConversationMemory).filter(
+                ConversationMemory.chat_id == str(chat_id),
+                ConversationMemory.created_at >= cutoff
+            ).order_by(
+                ConversationMemory.created_at
+            ).limit(limit).all()
+
+    def cleanup_old_memories(self, days: int = 90) -> int:
+        """Remove memories older than specified days (keep DMs longer)"""
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        dm_cutoff = datetime.utcnow() - timedelta(days=days * 2)  # Keep DMs 2x longer
+
+        with self.db.get_session() as session:
+            # Delete old group messages
+            group_deleted = session.query(ConversationMemory).filter(
+                ConversationMemory.is_private_dm == False,
+                ConversationMemory.created_at < cutoff
+            ).delete()
+
+            # Delete very old DMs
+            dm_deleted = session.query(ConversationMemory).filter(
+                ConversationMemory.is_private_dm == True,
+                ConversationMemory.created_at < dm_cutoff
+            ).delete()
+
+            session.commit()
+            return group_deleted + dm_deleted

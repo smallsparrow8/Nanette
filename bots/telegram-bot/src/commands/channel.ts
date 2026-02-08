@@ -40,6 +40,7 @@ export async function handleGroupMessage(ctx: Context) {
   const userId = ctx.from?.id;
   const username =
     ctx.from?.username || ctx.from?.first_name || 'Unknown';
+  const chatTitle = 'title' in ctx.chat ? ctx.chat.title : 'Unknown Group';
 
   // Skip bot commands — those are handled by command handlers
   if (text.startsWith('/')) return;
@@ -56,7 +57,9 @@ export async function handleGroupMessage(ctx: Context) {
         conversation_history: [],
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
+        channel_title: chatTitle,
         username: username,
+        message_id: String(messageId),
         is_group: true,
         directly_addressed: directlyAddressed,
       },
@@ -226,6 +229,7 @@ export async function handleGroupMediaMessage(ctx: Context) {
   const messageId = ctx.message!.message_id;
   const userId = ctx.from?.id;
   const username = ctx.from?.username || ctx.from?.first_name || 'Unknown';
+  const chatTitle = 'title' in ctx.chat ? ctx.chat.title : 'Unknown Group';
 
   // Check if directly addressed
   const directlyAddressed = isDirectlyAddressed(ctx, caption);
@@ -249,7 +253,9 @@ export async function handleGroupMediaMessage(ctx: Context) {
         conversation_history: [],
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
+        channel_title: chatTitle,
         username: username,
+        message_id: String(messageId),
         is_group: true,
         directly_addressed: directlyAddressed,
         image_base64: fileBase64,

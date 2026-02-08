@@ -457,3 +457,51 @@ class DetectedClue(Base):
 
     # Timing
     detected_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversationMemory(Base):
+    """
+    Stores all conversation messages for Nanette's persistent memory.
+    Enables cross-group context and DM recall with privacy controls.
+    """
+    __tablename__ = 'conversation_memory'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Context identification
+    chat_id = Column(String(255), nullable=False, index=True)
+    chat_title = Column(String(255), nullable=True)  # Group name or "DM"
+    user_id = Column(String(255), nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    platform = Column(String(50), nullable=False, default='telegram')
+
+    # Message content
+    message_id = Column(String(255), nullable=True)
+    role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+
+    # Privacy and context flags
+    is_private_dm = Column(Boolean, nullable=False, default=False, index=True)
+    is_group = Column(Boolean, nullable=False, default=False)
+
+    # DM sharing permission (only applies to private DMs)
+    # Format: JSON list of chat_ids where user has given permission to share
+    dm_share_permissions = Column(JSON, nullable=True, default=list)
+
+    # Metadata
+    has_media = Column(Boolean, default=False)
+    media_type = Column(String(50), nullable=True)  # photo, video, voice, etc.
+
+    # Timing
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<ConversationMemory {self.chat_id}:{self.message_id} by {self.username}>"
+
+    def can_share_in_chat(self, target_chat_id: str) -> bool:
+        """Check if this DM message can be shared in a specific chat"""
+        if not self.is_private_dm:
+            return True  # Group messages can always be referenced
+        if not self.dm_share_permissions:
+            return False
+        return target_chat_id in self.dm_share_permissions

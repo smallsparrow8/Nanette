@@ -17,12 +17,14 @@ from analyzers.social_monitor.channel_analyzer import ChannelAnalyzer
 from core.nanette.personality import Nanette
 from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
 from core.nanette.rin_chat_history import initialize_rin_history, get_rin_history
+from core.nanette.hoichi_chat_history import initialize_hoichi_history, get_hoichi_history
 import os
 from shared.database import (
     Database, ProjectRepository, ContractAnalysisRepository,
     InteractionAnalysisRepository, CreatorAnalysisRepository,
     ChannelMessageRepository, ServerConfigRepository,
-    DetectedClueRepository, MemberProfileRepository
+    DetectedClueRepository, MemberProfileRepository,
+    ConversationMemoryRepository
 )
 from shared.config import settings
 
@@ -52,6 +54,7 @@ class AnalysisOrchestrator:
         self.config_repo = ServerConfigRepository(self.db)
         self.clue_repo = DetectedClueRepository(self.db)
         self.member_repo = MemberProfileRepository(self.db)
+        self.memory_repo = ConversationMemoryRepository(self.db)
 
         # Initialize RIN chat history knowledge base
         kb_path = os.path.join(os.path.dirname(__file__), 'rin_knowledge_base.json')
@@ -59,6 +62,13 @@ class AnalysisOrchestrator:
             print("RIN chat history loaded successfully")
         else:
             print("RIN chat history not available (knowledge base not found)")
+
+        # Initialize HOICHI chat history knowledge base
+        hoichi_kb_path = os.path.join(os.path.dirname(__file__), 'hoichi_knowledge_base.json')
+        if initialize_hoichi_history(hoichi_kb_path):
+            print("HOICHI chat history loaded successfully")
+        else:
+            print("HOICHI chat history not available (knowledge base not found)")
 
     async def analyze_contract(self, contract_address: str, blockchain: str = "ethereum",
                               save_to_db: bool = True) -> Dict[str, Any]:
@@ -394,33 +404,103 @@ class AnalysisOrchestrator:
             except Exception as e:
                 print(f"Error tracking member profile: {e}")
 
-        # Get historical context from RIN chat history if relevant
+        # Get historical context from RIN and HOICHI chat histories if relevant
         historical_context = None
         rin_history = get_rin_history()
-        if rin_history and rin_history.is_loaded and message:
+        hoichi_history = get_hoichi_history()
+
+        if message:
+            msg_lower = message.lower()
+            context_parts = []
+
             # Keywords that might benefit from historical context
             history_keywords = [
-                'clue', 'clues', 'mystery', 'hidden', 'rin history',
+                'clue', 'clues', 'mystery', 'hidden', 'history',
                 'remember when', 'did anyone', 'who said', 'what happened',
                 'old messages', 'past', 'before', 'early days', 'original'
             ]
-            msg_lower = message.lower()
-            if any(kw in msg_lower for kw in history_keywords):
-                # Extract key terms for search
-                search_terms = [w for w in message.split() if len(w) > 3][:3]
-                if search_terms:
-                    historical_context = rin_history.get_context_for_query(
-                        ' '.join(search_terms), max_messages=5
-                    )
 
-        # Call Nanette with member context and historical context
+            # RIN-specific keywords
+            rin_keywords = ['rin', 'rintintin', '$rin']
+
+            # HOICHI-specific keywords
+            hoichi_keywords = ['hoichi', '$hoichi', 'hoi']
+
+            # Extract key terms for search
+            search_terms = [w for w in message.split() if len(w) > 3][:3]
+            search_query = ' '.join(search_terms) if search_terms else message[:50]
+
+            # Check RIN history
+            if rin_history and rin_history.is_loaded:
+                if any(kw in msg_lower for kw in rin_keywords) or any(kw in msg_lower for kw in history_keywords):
+                    rin_context = rin_history.get_context_for_query(search_query, max_messages=5)
+                    if rin_context:
+                        context_parts.append(rin_context)
+
+            # Check HOICHI history
+            if hoichi_history and hoichi_history.is_loaded:
+                if any(kw in msg_lower for kw in hoichi_keywords) or any(kw in msg_lower for kw in history_keywords):
+                    hoichi_context = hoichi_history.get_context_for_query(search_query, max_messages=5)
+                    if hoichi_context:
+                        context_parts.append(hoichi_context)
+
+            if context_parts:
+                historical_context = "\n\n".join(context_parts)
+
+        # Build conversation context from persistent memory
+        conversation_context = None
+        if channel_id and user_id:
+            try:
+                conversation_context = self.build_conversation_context_for_nanette(
+                    user_id=user_id,
+                    chat_id=channel_id,
+                    is_group=is_group
+                )
+            except Exception as e:
+                print(f"Error building conversation context: {e}")
+
+        # Store user's message in memory
+        is_private_dm = not is_group
+        if user_id and channel_id and message:
+            try:
+                self.store_memory(
+                    chat_id=channel_id,
+                    user_id=user_id,
+                    role='user',
+                    content=message,
+                    username=username,
+                    is_private_dm=is_private_dm,
+                    is_group=is_group,
+                    has_media=bool(image_base64)
+                )
+            except Exception as e:
+                print(f"Error storing user message: {e}")
+
+        # Call Nanette with all context
         result = await self.nanette.chat(
             message, conversation_history,
             username=username, is_group=is_group, directly_addressed=directly_addressed,
             image_base64=image_base64, image_media_type=image_media_type,
             file_name=file_name, file_size=file_size, analysis_mode=analysis_mode,
-            member_context=member_context, historical_context=historical_context
+            member_context=member_context, historical_context=historical_context,
+            conversation_context=conversation_context
         )
+
+        # Store Nanette's response in memory
+        if result.get('should_respond', True) and result.get('response'):
+            if user_id and channel_id:
+                try:
+                    self.store_memory(
+                        chat_id=channel_id,
+                        user_id=user_id,
+                        role='assistant',
+                        content=result['response'],
+                        username='Nanette',
+                        is_private_dm=is_private_dm,
+                        is_group=is_group
+                    )
+                except Exception as e:
+                    print(f"Error storing Nanette response: {e}")
 
         # If Nanette responded, update interaction count
         if user_id and result.get('should_respond', True):
@@ -694,3 +774,136 @@ class AnalysisOrchestrator:
     def get_help(self) -> str:
         """Get help message"""
         return self.nanette.get_help_message()
+
+    # Memory methods for persistent conversation storage
+    def store_memory(
+        self, chat_id: str, user_id: str, role: str, content: str,
+        username: Optional[str] = None, chat_title: Optional[str] = None,
+        message_id: Optional[str] = None, is_private_dm: bool = False,
+        is_group: bool = False, has_media: bool = False,
+        media_type: Optional[str] = None, platform: str = 'telegram'
+    ):
+        """Store a message in Nanette's persistent memory"""
+        return self.memory_repo.store_message(
+            chat_id=chat_id,
+            user_id=user_id,
+            role=role,
+            content=content,
+            username=username,
+            chat_title=chat_title,
+            message_id=message_id,
+            is_private_dm=is_private_dm,
+            is_group=is_group,
+            has_media=has_media,
+            media_type=media_type,
+            platform=platform
+        )
+
+    def grant_dm_share_permission(self, user_id: str, target_chat_id: str) -> int:
+        """Grant permission to share user's DMs in a specific chat"""
+        return self.memory_repo.grant_dm_share_permission(user_id, target_chat_id)
+
+    def revoke_dm_share_permission(self, user_id: str, target_chat_id: str) -> int:
+        """Revoke permission to share user's DMs in a specific chat"""
+        return self.memory_repo.revoke_dm_share_permission(user_id, target_chat_id)
+
+    def get_memory_context(
+        self, user_id: str, chat_id: str,
+        include_dms: bool = False, limit: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Build comprehensive memory context for a user in a chat.
+        Includes chat history, cross-group references, and shareable DMs.
+        """
+        context = {
+            'chat_history': [],
+            'user_history_other_chats': [],
+            'shareable_dms': [],
+            'user_stats': {}
+        }
+
+        # Get current chat history
+        chat_history = self.memory_repo.get_chat_history(chat_id, limit=limit)
+        context['chat_history'] = [
+            {
+                'role': m.role,
+                'content': m.content[:500],
+                'username': m.username,
+                'timestamp': m.created_at.isoformat() if m.created_at else None
+            }
+            for m in chat_history
+        ]
+
+        # Get user's history from other groups (for cross-referencing)
+        if user_id:
+            cross_chat = self.memory_repo.get_cross_chat_context(
+                user_id, chat_id, limit=20
+            )
+            context['user_history_other_chats'] = [
+                {
+                    'chat_title': m.chat_title or 'Unknown group',
+                    'content': m.content[:300],
+                    'timestamp': m.created_at.isoformat() if m.created_at else None
+                }
+                for m in cross_chat if not m.is_private_dm
+            ]
+
+            # Get shareable DMs (only if user has given permission)
+            if include_dms:
+                shareable = self.memory_repo.get_shareable_user_dms(
+                    user_id, chat_id, limit=10
+                )
+                context['shareable_dms'] = [
+                    {
+                        'role': m.role,
+                        'content': m.content[:300],
+                        'timestamp': m.created_at.isoformat() if m.created_at else None
+                    }
+                    for m in shareable
+                ]
+
+        return context
+
+    def build_conversation_context_for_nanette(
+        self, user_id: str, chat_id: str, is_group: bool = False
+    ) -> str:
+        """
+        Build formatted context string for Nanette's prompt.
+        Respects privacy - only includes shareable content.
+        """
+        parts = []
+
+        # Get recent chat history (last 20 messages)
+        chat_history = self.memory_repo.get_chat_history(chat_id, limit=20)
+        if chat_history:
+            parts.append("[Recent conversation in this chat:]")
+            for m in chat_history[-10:]:
+                sender = m.username or 'Someone'
+                if m.role == 'assistant':
+                    parts.append(f"Nanette: {m.content[:200]}")
+                else:
+                    parts.append(f"{sender}: {m.content[:200]}")
+
+        # If in a group, check if user has shared DM content
+        if is_group and user_id:
+            shareable_dms = self.memory_repo.get_shareable_user_dms(
+                user_id, chat_id, limit=5
+            )
+            if shareable_dms:
+                parts.append("\n[From your private conversations with this user that they've shared:]")
+                for m in shareable_dms:
+                    if m.role == 'user':
+                        parts.append(f"They told you: {m.content[:200]}")
+
+        # Get cross-group context
+        if user_id and is_group:
+            cross_chat = self.memory_repo.get_cross_chat_context(
+                user_id, chat_id, limit=10
+            )
+            other_groups = [m for m in cross_chat if not m.is_private_dm and m.chat_title]
+            if other_groups:
+                parts.append("\n[This user has also said in other groups:]")
+                for m in other_groups[:5]:
+                    parts.append(f"In {m.chat_title}: {m.content[:150]}")
+
+        return "\n".join(parts) if parts else ""
