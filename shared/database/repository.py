@@ -21,7 +21,12 @@ class Database:
 
     def __init__(self, database_url: str = "sqlite:///nanette.db"):
         self.engine = create_engine(database_url, echo=False)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        # expire_on_commit=False prevents DetachedInstanceError when accessing
+        # object properties after the session is closed
+        self.SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=self.engine,
+            expire_on_commit=False
+        )
 
     def create_tables(self):
         """Create all database tables"""
