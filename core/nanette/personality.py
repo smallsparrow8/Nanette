@@ -276,6 +276,16 @@ Format your analysis like this when reviewing contracts:
             messages.append({"role": "user", "content": enhanced_message})
 
         try:
+            # Debug: Log what we're about to send
+            print(f"[Nanette] Preparing API call - messages count: {len(messages)}")
+            if messages:
+                print(f"[Nanette] Last message role: {messages[-1].get('role', 'unknown')}")
+                content = messages[-1].get('content', '')
+                if isinstance(content, str):
+                    print(f"[Nanette] Message preview: {content[:100]}...")
+                else:
+                    print(f"[Nanette] Message is multimodal with {len(content)} blocks")
+
             # Enhanced system prompt with tool awareness
             enhanced_system_prompt = self.system_prompt + """
 
