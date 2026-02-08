@@ -380,11 +380,23 @@ MEMORY USAGE RULES:
             context_parts.append(f"[You know about this person: {member_context}]")
         context = "\n".join(context_parts) if context_parts else ""
 
+        # Describe what media was shared
+        media_description = ""
+        if image_base64:
+            viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            if image_media_type in viewable_types:
+                media_description = "\n\n[AN IMAGE IS ATTACHED - you can see it below. Consider whether it's interesting enough to comment on.]"
+            elif file_name:
+                media_description = f"\n\n[A file was shared: {file_name} ({image_media_type})]"
+            else:
+                media_description = f"\n\n[A {image_media_type or 'file'} was shared]"
+
         # Build the decision prompt
+        message_text = user_message if user_message else "(no caption)"
         decision_prompt = f"""You are Nanette in a group chat. Someone just posted this message (they did NOT directly address you):
 
 {context}
-Message: {user_message}
+Message: {message_text}{media_description}
 
 As a natural member of the community, decide if you should respond. Consider:
 - Is this something you can genuinely help with or add value to?
