@@ -346,7 +346,10 @@ MEMORY USAGE RULES:
             return {"response": response.content[0].text, "should_respond": True}
 
         except Exception as e:
+            import traceback
             print(f"Error calling Claude API: {e}")
+            print(f"Error type: {type(e).__name__}")
+            traceback.print_exc()
             return {"response": "Something's interfering with my senses right now. Give me a moment and try again.", "should_respond": True}
 
     async def _decide_group_engagement(self, user_message: str, username: Optional[str] = None,
