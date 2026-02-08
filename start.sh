@@ -1,13 +1,27 @@
 #!/bin/bash
 echo "=== Starting Nanette ==="
 
-# Start Python API in background
+# Verify critical environment variables
+echo "Checking environment..."
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+    echo "ERROR: ANTHROPIC_API_KEY is not set!"
+    exit 1
+fi
+echo "ANTHROPIC_API_KEY is set: YES"
+
+# Start Python API in background, redirect output to show errors
 echo "Starting Python API..."
-python -m api.main &
+python -m api.main 2>&1 &
 API_PID=$!
 
-# Wait a moment for API to start
-sleep 3
+# Wait for API to start and verify it's running
+sleep 5
+if ! kill -0 $API_PID 2>/dev/null; then
+    echo "ERROR: Python API crashed on startup!"
+    echo "Check logs above for error details."
+    exit 1
+fi
+echo "Python API started successfully (PID: $API_PID)"
 
 # Start Telegram bot in foreground
 echo "Starting Telegram bot..."
