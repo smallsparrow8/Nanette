@@ -27,8 +27,12 @@ echo "Python API started successfully (PID: $API_PID)"
 echo "Starting Telegram bot..."
 echo "TELEGRAM_BOT_TOKEN is set: $([ -n "$TELEGRAM_BOT_TOKEN" ] && echo 'YES' || echo 'NO')"
 echo "API_URL is: $API_URL"
+echo "Changing to bot directory..."
 cd bots/telegram-bot
-npx ts-node src/index.ts
+echo "Current directory: $(pwd)"
+echo "Checking if index.ts exists: $([ -f src/index.ts ] && echo 'YES' || echo 'NO')"
+echo "Running ts-node..."
+npx ts-node src/index.ts 2>&1
 
 # If bot exits, keep container alive with API
 wait $API_PID
