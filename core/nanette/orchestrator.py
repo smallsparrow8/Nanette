@@ -32,9 +32,21 @@ from shared.config import settings
 class AnalysisOrchestrator:
     """Orchestrates complete contract analysis pipeline"""
 
+    # Phrases that tell Nanette to be quiet
+    SILENCE_PHRASES = [
+        'be quiet', 'shut up', 'stop talking', 'silence', 'hush',
+        'quiet down', 'stop responding', 'go away', 'leave us alone',
+        'shh', 'shhh', 'shush', 'zip it', 'enough', 'stop it',
+        'go to sleep', 'take a break', 'take a nap', 'cool it',
+        'pipe down', 'knock it off', 'chill', 'relax nanette',
+        'mute', 'stfu', "don't speak", "dont speak", "stop speaking",
+    ]
+
     def __init__(self):
         """Initialize orchestrator with all analyzers"""
         self.nanette = Nanette()
+        # Track silenced groups: {channel_id: True}
+        self._silenced_groups = {}
         self.vulnerability_scanner = VulnerabilityScanner()
         self.tokenomics_analyzer = TokenomicsAnalyzer()
         self.safety_scorer = SafetyScorer()
@@ -377,6 +389,27 @@ class AnalysisOrchestrator:
         Returns:
             Dict with response and should_respond flag
         """
+        # === SILENCE MODE FOR GROUPS ===
+        if is_group and channel_id and message:
+            msg_lower = message.lower()
+
+            # Check if someone is telling Nanette to be quiet
+            if directly_addressed and any(phrase in msg_lower for phrase in self.SILENCE_PHRASES):
+                self._silenced_groups[channel_id] = True
+                return {
+                    "response": "*lowers her head and rests quietly, ears still perked*",
+                    "should_respond": True
+                }
+
+            # If group is silenced, only respond if directly addressed by name
+            if channel_id in self._silenced_groups:
+                if directly_addressed:
+                    # Someone said her name — she wakes up
+                    del self._silenced_groups[channel_id]
+                else:
+                    # Stay quiet
+                    return {"response": None, "should_respond": False}
+
         member_context = None
 
         # Track member profile if we have user_id
