@@ -254,9 +254,27 @@ Format your analysis like this when reviewing contracts:
             if is_forensic:
                 text_part = f"{text_part}\n\n[Forensic Analysis Mode]\nExamine this media critically. Look for signs of manipulation, editing, compression artifacts, inconsistent lighting/shadows, cloned regions, metadata anomalies, and anything that suggests the media is not authentic. Note any technical irregularities in the file structure or content."
 
-            # If no image could be shown (non-viewable type), explain what we received
+            # Handle non-viewable media types naturally
             if image_media_type and image_media_type not in viewable_types:
-                text_part = f"{text_part}\n\n[Note: I received a {image_media_type} file but cannot view it directly. I can discuss what you've told me about it.]"
+                media_hints = {
+                    'video/mp4': 'a video',
+                    'video/webm': 'a video',
+                    'video/quicktime': 'a video',
+                    'video/x-matroska': 'a video',
+                    'audio/mpeg': 'an audio file (MP3)',
+                    'audio/mp3': 'an audio file (MP3)',
+                    'audio/ogg': 'a voice message',
+                    'audio/wav': 'an audio file (WAV)',
+                    'audio/x-wav': 'an audio file (WAV)',
+                    'audio/flac': 'an audio file (FLAC)',
+                    'audio/aac': 'an audio file (AAC)',
+                    'audio/m4a': 'an audio file (M4A)',
+                    'application/x-tgsticker': 'an animated sticker',
+                    'application/pdf': 'a PDF document',
+                }
+                media_label = media_hints.get(image_media_type, f'a {image_media_type} file')
+                file_label = f' called "{file_name}"' if file_name else ''
+                text_part = f"{text_part}\n\n[The user shared {media_label}{file_label}. You cannot view or listen to it directly, but you can engage with it naturally — ask what it's about, comment on the context, react to the filename or caption, or share relevant thoughts. Don't say you 'cannot process' media — instead, engage like someone who received a file they haven't opened yet.]"
 
             if not text_part:
                 text_part = "What do you see in this media?"
@@ -382,14 +400,25 @@ MEMORY USAGE RULES:
 
         # Describe what media was shared
         media_description = ""
-        if image_base64:
+        if image_base64 or image_media_type:
             viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
             if image_media_type in viewable_types:
                 media_description = "\n\n[AN IMAGE IS ATTACHED - you can see it below. Consider whether it's interesting enough to comment on.]"
-            elif file_name:
-                media_description = f"\n\n[A file was shared: {file_name} ({image_media_type})]"
             else:
-                media_description = f"\n\n[A {image_media_type or 'file'} was shared]"
+                # Describe non-viewable media naturally
+                media_hints = {
+                    'video/mp4': 'a video',
+                    'video/webm': 'a video',
+                    'audio/mpeg': 'an audio file (MP3)',
+                    'audio/mp3': 'an audio file (MP3)',
+                    'audio/ogg': 'a voice message',
+                    'audio/wav': 'an audio file',
+                    'audio/aac': 'an audio file',
+                    'application/x-tgsticker': 'an animated sticker',
+                }
+                media_label = media_hints.get(image_media_type, f'a {image_media_type or "media"} file')
+                file_label = f' "{file_name}"' if file_name else ''
+                media_description = f"\n\n[Someone shared {media_label}{file_label}. You can't view/listen to it directly, but consider if the context or filename is interesting enough to comment on naturally.]"
 
         # Build the decision prompt
         message_text = user_message if user_message else "(no caption)"
