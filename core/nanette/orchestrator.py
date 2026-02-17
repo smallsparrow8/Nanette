@@ -18,8 +18,6 @@ from core.nanette.personality import Nanette
 from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
 from core.nanette.rin_chat_history import initialize_rin_history, get_rin_history
 from core.nanette.hoichi_chat_history import initialize_hoichi_history, get_hoichi_history
-from core.nanette.okinami_chat_history import initialize_okinami_history, get_okinami_history
-from core.nanette.sakura_chat_history import initialize_sakura_history, get_sakura_history
 from core.nanette.media_processor import MediaProcessor
 from core.nanette.vector_memory import VectorMemory
 import os
@@ -94,19 +92,9 @@ class AnalysisOrchestrator:
         else:
             print("HOICHI chat history not available (knowledge base not found)")
 
-        # Initialize OKINAMI chat history knowledge base
-        okinami_kb_path = os.path.join(os.path.dirname(__file__), 'okinami_knowledge_base.json')
-        if initialize_okinami_history(okinami_kb_path):
-            print("OKINAMI chat history loaded successfully")
-        else:
-            print("OKINAMI chat history not available (knowledge base not found)")
-
-        # Initialize Sakura Blossom chat history knowledge base
-        sakura_kb_path = os.path.join(os.path.dirname(__file__), 'sakura_knowledge_base.json')
-        if initialize_sakura_history(sakura_kb_path):
-            print("Sakura Blossom chat history loaded successfully")
-        else:
-            print("Sakura Blossom chat history not available (knowledge base not found)")
+        # OKINAMI and Sakura knowledge bases are too large to hold in memory
+        # They are available through Pinecone vector search after import
+        print("OKINAMI and Sakura: available via Pinecone (not loaded in memory)")
 
     async def analyze_contract(self, contract_address: str, blockchain: str = "ethereum",
                               save_to_db: bool = True) -> Dict[str, Any]:
@@ -464,11 +452,10 @@ class AnalysisOrchestrator:
                 print(f"Error tracking member profile: {e}")
 
         # Get historical context from community chat histories if relevant
+        # OKINAMI and Sakura are only available via Pinecone (too large for memory)
         historical_context = None
         rin_history = get_rin_history()
         hoichi_history = get_hoichi_history()
-        okinami_history = get_okinami_history()
-        sakura_history = get_sakura_history()
 
         if message:
             msg_lower = message.lower()
@@ -487,11 +474,6 @@ class AnalysisOrchestrator:
             # HOICHI-specific keywords
             hoichi_keywords = ['hoichi', '$hoichi', 'hoi']
 
-            # OKINAMI-specific keywords
-            okinami_keywords = ['okinami', '$okinami', 'oki']
-
-            # Sakura-specific keywords
-            sakura_keywords = ['sakura', '$sakura', 'blossom']
 
             # Extract key terms for search
             search_terms = [w for w in message.split() if len(w) > 3][:3]
@@ -511,19 +493,7 @@ class AnalysisOrchestrator:
                     if hoichi_context:
                         context_parts.append(hoichi_context)
 
-            # Check OKINAMI history
-            if okinami_history and okinami_history.is_loaded:
-                if any(kw in msg_lower for kw in okinami_keywords) or any(kw in msg_lower for kw in history_keywords):
-                    okinami_context = okinami_history.get_context_for_query(search_query, max_messages=5)
-                    if okinami_context:
-                        context_parts.append(okinami_context)
-
-            # Check Sakura history
-            if sakura_history and sakura_history.is_loaded:
-                if any(kw in msg_lower for kw in sakura_keywords) or any(kw in msg_lower for kw in history_keywords):
-                    sakura_context = sakura_history.get_context_for_query(search_query, max_messages=5)
-                    if sakura_context:
-                        context_parts.append(sakura_context)
+            # OKINAMI and Sakura context comes from Pinecone vector search below
 
             # Also search Pinecone vector memory
             if self.vector_memory.is_ready:

@@ -594,8 +594,7 @@ def _run_import(source: str, batch_size: int):
     global _import_status
     from core.nanette.rin_chat_history import get_rin_history
     from core.nanette.hoichi_chat_history import get_hoichi_history
-    from core.nanette.okinami_chat_history import get_okinami_history
-    from core.nanette.sakura_chat_history import get_sakura_history
+    import json as _json
 
     results = {}
     skipped_privacy = 0
@@ -665,79 +664,61 @@ def _run_import(source: str, batch_size: int):
             else:
                 results['hoichi'] = {'error': 'HOICHI history not loaded'}
 
-        # Import OKINAMI
-        if source in ("okinami", "all"):
-            _import_status["progress"] = "Preparing OKINAMI messages..."
-            okinami = get_okinami_history()
-            if okinami and okinami.is_loaded:
-                okinami_messages = []
-                for msg in okinami.messages:
-                    text = msg.get('text', '')
-                    if not text or len(text.strip()) < 5:
-                        continue
-                    if not passes_privacy_filter(text):
-                        skipped_privacy += 1
-                        continue
-                    okinami_messages.append({
-                        'id': msg.get('id', ''),
-                        'text': text,
-                        'chat_id': 'okinami_telegram',
-                        'username': msg.get('sender', ''),
-                        'chat_title': 'OKINAMI Community',
-                        'timestamp': msg.get('timestamp', ''),
-                    })
+        # Import OKINAMI and Sakura from JSON files on-demand
+        # (not loaded at startup to save memory)
+        for src_name, src_key, chat_id, chat_title, kb_file in [
+            ("okinami", "okinami", "okinami_telegram",
+             "OKINAMI Community", "okinami_knowledge_base.json"),
+            ("sakura", "sakura", "sakura_telegram",
+             "Sakura Blossom Community", "sakura_knowledge_base.json"),
+        ]:
+            if source not in (src_key, "all"):
+                continue
+            import os
+            kb_path = os.path.join(
+                os.path.dirname(__file__), '..', 'core', 'nanette', kb_file
+            )
+            if not os.path.exists(kb_path):
+                results[src_key] = {'error': f'{kb_file} not found'}
+                continue
+            _import_status["progress"] = f"Loading {src_name} from disk..."
+            with open(kb_path, 'r', encoding='utf-8') as f:
+                kb_data = _json.load(f)
+            msgs_raw = kb_data.get('messages', [])
+            del kb_data  # free memory immediately
+            import gc; gc.collect()
 
-                _import_status["progress"] = (
-                    f"Embedding OKINAMI: {len(okinami_messages)} messages..."
-                )
-                count = orchestrator.vector_memory.bulk_import(
-                    okinami_messages,
-                    batch_size=batch_size,
-                    source_label="okinami"
-                )
-                results['okinami'] = {
-                    'imported': count,
-                    'total_eligible': len(okinami_messages),
-                }
-            else:
-                results['okinami'] = {'error': 'OKINAMI history not loaded'}
+            src_messages = []
+            for msg in msgs_raw:
+                text = msg.get('text', '')
+                if not text or len(text.strip()) < 5:
+                    continue
+                if not passes_privacy_filter(text):
+                    skipped_privacy += 1
+                    continue
+                src_messages.append({
+                    'id': msg.get('id', ''),
+                    'text': text,
+                    'chat_id': chat_id,
+                    'username': msg.get('sender', ''),
+                    'chat_title': chat_title,
+                    'timestamp': msg.get('timestamp', ''),
+                })
+            del msgs_raw; gc.collect()
 
-        # Import Sakura
-        if source in ("sakura", "all"):
-            _import_status["progress"] = "Preparing Sakura messages..."
-            sakura = get_sakura_history()
-            if sakura and sakura.is_loaded:
-                sakura_messages = []
-                for msg in sakura.messages:
-                    text = msg.get('text', '')
-                    if not text or len(text.strip()) < 5:
-                        continue
-                    if not passes_privacy_filter(text):
-                        skipped_privacy += 1
-                        continue
-                    sakura_messages.append({
-                        'id': msg.get('id', ''),
-                        'text': text,
-                        'chat_id': 'sakura_telegram',
-                        'username': msg.get('sender', ''),
-                        'chat_title': 'Sakura Blossom Community',
-                        'timestamp': msg.get('timestamp', ''),
-                    })
-
-                _import_status["progress"] = (
-                    f"Embedding Sakura: {len(sakura_messages)} messages..."
-                )
-                count = orchestrator.vector_memory.bulk_import(
-                    sakura_messages,
-                    batch_size=batch_size,
-                    source_label="sakura"
-                )
-                results['sakura'] = {
-                    'imported': count,
-                    'total_eligible': len(sakura_messages),
-                }
-            else:
-                results['sakura'] = {'error': 'Sakura history not loaded'}
+            _import_status["progress"] = (
+                f"Embedding {src_name}: {len(src_messages)} messages..."
+            )
+            count = orchestrator.vector_memory.bulk_import(
+                src_messages,
+                batch_size=batch_size,
+                source_label=src_key
+            )
+            results[src_key] = {
+                'imported': count,
+                'total_eligible': len(src_messages),
+            }
+            del src_messages; gc.collect()
 
         results['skipped_privacy'] = skipped_privacy
         _import_status["results"] = results
