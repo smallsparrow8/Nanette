@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     telegram_api_hash: Optional[str] = Field(None, description="Telegram API hash")
 
     # =========================================================================
+    # OPENAI (Whisper transcription)
+    # =========================================================================
+    openai_api_key: Optional[str] = Field(None, description="OpenAI API key for Whisper transcription")
+
+    # =========================================================================
+    # PINECONE (Vector memory)
+    # =========================================================================
+    pinecone_api_key: Optional[str] = Field(None, description="Pinecone API key")
+    pinecone_index_name: str = Field("nanette-memory", description="Pinecone index name")
+    pinecone_environment: str = Field("us-east-1", description="Pinecone environment/region")
+
+    # =========================================================================
     # DATABASE
     # =========================================================================
     database_url: str = Field("sqlite:///nanette.db", description="Database connection URL")

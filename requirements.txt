@@ -26,3 +26,9 @@ numpy>=1.26.0
 
 # HTML parsing for chat history
 beautifulsoup4>=4.12.0
+
+# Audio/Video processing
+openai>=1.12.0
+
+# Vector memory (Pinecone)
+pinecone-client>=3.0.0

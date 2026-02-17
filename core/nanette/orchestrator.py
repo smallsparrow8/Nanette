@@ -18,6 +18,8 @@ from core.nanette.personality import Nanette
 from core.nanette.rintintin_info import get_rintintin_story, get_short_rintintin_info
 from core.nanette.rin_chat_history import initialize_rin_history, get_rin_history
 from core.nanette.hoichi_chat_history import initialize_hoichi_history, get_hoichi_history
+from core.nanette.media_processor import MediaProcessor
+from core.nanette.vector_memory import VectorMemory
 import os
 from shared.database import (
     Database, ProjectRepository, ContractAnalysisRepository,
@@ -54,6 +56,14 @@ class AnalysisOrchestrator:
         self.interaction_analyzer = InteractionAnalyzer()
         self.graph_renderer = GraphRenderer()
         self.channel_analyzer = ChannelAnalyzer()
+        self.media_processor = MediaProcessor()
+
+        # Vector memory (Pinecone)
+        self.vector_memory = VectorMemory()
+        if self.vector_memory.initialize():
+            print("Vector memory (Pinecone) connected")
+        else:
+            print("Vector memory not available (continuing without)")
 
         # Database
         self.db = Database(settings.database_url)
@@ -477,6 +487,14 @@ class AnalysisOrchestrator:
                     if hoichi_context:
                         context_parts.append(hoichi_context)
 
+            # Also search Pinecone vector memory
+            if self.vector_memory.is_ready:
+                vec_context = self.vector_memory.get_context_for_query(
+                    search_query, top_k=5
+                )
+                if vec_context:
+                    context_parts.append(vec_context)
+
             if context_parts:
                 historical_context = "\n\n".join(context_parts)
 
@@ -492,26 +510,68 @@ class AnalysisOrchestrator:
             except Exception as e:
                 print(f"Error building conversation context: {e}")
 
+        # Process media (transcribe audio, extract video frames)
+        media_transcript = None
+        video_frames = []
+        if image_base64 and image_media_type:
+            try:
+                import base64 as b64
+                media_bytes = b64.b64decode(image_base64)
+                media_result = await self.media_processor.process_media(
+                    media_bytes, image_media_type, file_name
+                )
+                media_transcript = media_result.get('transcript')
+                video_frames = media_result.get('frames', [])
+            except Exception as e:
+                print(f"Error processing media: {e}")
+
+        # If we got a transcript, append it to the message
+        enhanced_message = message or ''
+        if media_transcript:
+            enhanced_message = (
+                f"{enhanced_message}\n\n"
+                f"[Audio transcript: \"{media_transcript}\"]"
+            ).strip()
+
         # Store user's message in memory
         is_private_dm = not is_group
-        if user_id and channel_id and message:
+        store_text = enhanced_message or message
+        if user_id and channel_id and store_text:
             try:
                 self.store_memory(
                     chat_id=channel_id,
                     user_id=user_id,
                     role='user',
-                    content=message,
+                    content=store_text,
                     username=username,
                     is_private_dm=is_private_dm,
                     is_group=is_group,
                     has_media=bool(image_base64)
                 )
+                # Also store in vector memory for semantic search
+                if self.vector_memory.is_ready:
+                    self.vector_memory.store_message(
+                        message_id=f"msg_{datetime.utcnow().timestamp()}",
+                        text=store_text,
+                        chat_id=channel_id,
+                        user_id=user_id,
+                        username=username,
+                        is_group=is_group,
+                    )
             except Exception as e:
                 print(f"Error storing user message: {e}")
 
+        # If we extracted video frames, use the first as the image
+        if video_frames and not any(
+            t in (image_media_type or '')
+            for t in ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        ):
+            image_base64 = video_frames[0]
+            image_media_type = 'image/jpeg'
+
         # Call Nanette with all context
         result = await self.nanette.chat(
-            message, conversation_history,
+            enhanced_message, conversation_history,
             username=username, is_group=is_group, directly_addressed=directly_addressed,
             image_base64=image_base64, image_media_type=image_media_type,
             file_name=file_name, file_size=file_size, analysis_mode=analysis_mode,

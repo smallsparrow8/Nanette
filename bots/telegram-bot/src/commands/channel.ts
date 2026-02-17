@@ -9,8 +9,10 @@ const API_URL = process.env.API_URL || 'http://localhost:8000';
 function isDirectlyAddressed(ctx: Context, text: string): boolean {
   const lowerText = text.toLowerCase();
 
-  // Name mentions
+  // Name mentions (full name or nickname)
   if (lowerText.includes('nanette')) return true;
+  // Check for "nan" as a standalone word (not part of another word)
+  if (/\bnan\b/.test(lowerText)) return true;
 
   // @mention of the bot
   const botUsername = ctx.botInfo?.username?.toLowerCase();
