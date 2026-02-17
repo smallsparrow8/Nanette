@@ -713,14 +713,17 @@ async def import_status():
 
 
 if __name__ == "__main__":
+    # Railway sets PORT env var; use it if available
+    port = settings.port if settings.port > 0 else settings.api_port
     print("Starting Nanette API...")
     print(f"Environment: {settings.environment}")
     print(f"Database: {settings.database_url}")
+    print(f"Listening on port: {port}")
 
     uvicorn.run(
         "api.main:app",
         host=settings.api_host,
-        port=settings.api_port,
+        port=port,
         reload=settings.is_development,
         log_level=settings.log_level.lower()
     )

@@ -101,6 +101,7 @@ class Settings(BaseSettings):
 
     api_host: str = Field("0.0.0.0", description="API server host")
     api_port: int = Field(8000, description="API server port")
+    port: int = Field(0, description="Railway PORT override")
 
     rate_limit_per_minute: int = Field(30, description="Rate limit per minute")
     rate_limit_per_hour: int = Field(500, description="Rate limit per hour")

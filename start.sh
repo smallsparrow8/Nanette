@@ -11,6 +11,13 @@ echo "ANTHROPIC_API_KEY is set: YES"
 echo "OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo 'YES' || echo 'NO')"
 echo "PINECONE_API_KEY is set: $([ -n "$PINECONE_API_KEY" ] && echo 'YES' || echo 'NO')"
 
+# Determine port: Railway sets PORT, fallback to 8000
+APP_PORT="${PORT:-8000}"
+echo "API port: $APP_PORT"
+
+# Set API_URL for the bot to use
+export API_URL="http://localhost:${APP_PORT}"
+
 # Test pinecone import before starting
 echo "Testing pinecone import..."
 python -c "from pinecone import Pinecone; print('pinecone import OK')" 2>&1 || echo "WARNING: pinecone import failed"
@@ -29,7 +36,7 @@ for i in $(seq 1 20); do
         echo "ERROR: Python API crashed on startup!"
         exit 1
     fi
-    if curl -s http://localhost:8000/docs > /dev/null 2>&1; then
+    if curl -s http://localhost:${APP_PORT}/docs > /dev/null 2>&1; then
         API_READY=true
         break
     fi
