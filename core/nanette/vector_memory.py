@@ -64,7 +64,7 @@ class VectorMemory:
             self._index = self._pc.Index(index_name)
             self._ready = True
             stats = self._index.describe_index_stats()
-            total = stats.get('total_vector_count', 0)
+            total = getattr(stats, 'total_vector_count', 0)
             print(
                 f"[VectorMemory] Connected to Pinecone. "
                 f"{total} vectors stored."
@@ -160,10 +160,10 @@ class VectorMemory:
             )
 
             matches = []
-            for match in results.get('matches', []):
-                score = match.get('score', 0)
+            for match in getattr(results, 'matches', []):
+                score = getattr(match, 'score', 0)
                 if score >= min_score:
-                    meta = match.get('metadata', {})
+                    meta = getattr(match, 'metadata', {}) or {}
                     matches.append({
                         'text': meta.get('text', ''),
                         'username': meta.get('username', ''),
