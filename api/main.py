@@ -564,7 +564,7 @@ async def get_memory_context(request: GetMemoryContextRequest):
 
 
 class ImportHistoryRequest(BaseModel):
-    source: str = "all"  # "rin", "hoichi", or "all"
+    source: str = "all"  # "rin", "hoichi", "okinami", "sakura", or "all"
     batch_size: int = 100
 
 
@@ -594,6 +594,8 @@ def _run_import(source: str, batch_size: int):
     global _import_status
     from core.nanette.rin_chat_history import get_rin_history
     from core.nanette.hoichi_chat_history import get_hoichi_history
+    from core.nanette.okinami_chat_history import get_okinami_history
+    from core.nanette.sakura_chat_history import get_sakura_history
 
     results = {}
     skipped_privacy = 0
@@ -662,6 +664,80 @@ def _run_import(source: str, batch_size: int):
                 results['hoichi'] = {'imported': count, 'total_eligible': len(hoichi_messages)}
             else:
                 results['hoichi'] = {'error': 'HOICHI history not loaded'}
+
+        # Import OKINAMI
+        if source in ("okinami", "all"):
+            _import_status["progress"] = "Preparing OKINAMI messages..."
+            okinami = get_okinami_history()
+            if okinami and okinami.is_loaded:
+                okinami_messages = []
+                for msg in okinami.messages:
+                    text = msg.get('text', '')
+                    if not text or len(text.strip()) < 5:
+                        continue
+                    if not passes_privacy_filter(text):
+                        skipped_privacy += 1
+                        continue
+                    okinami_messages.append({
+                        'id': msg.get('id', ''),
+                        'text': text,
+                        'chat_id': 'okinami_telegram',
+                        'username': msg.get('sender', ''),
+                        'chat_title': 'OKINAMI Community',
+                        'timestamp': msg.get('timestamp', ''),
+                    })
+
+                _import_status["progress"] = (
+                    f"Embedding OKINAMI: {len(okinami_messages)} messages..."
+                )
+                count = orchestrator.vector_memory.bulk_import(
+                    okinami_messages,
+                    batch_size=batch_size,
+                    source_label="okinami"
+                )
+                results['okinami'] = {
+                    'imported': count,
+                    'total_eligible': len(okinami_messages),
+                }
+            else:
+                results['okinami'] = {'error': 'OKINAMI history not loaded'}
+
+        # Import Sakura
+        if source in ("sakura", "all"):
+            _import_status["progress"] = "Preparing Sakura messages..."
+            sakura = get_sakura_history()
+            if sakura and sakura.is_loaded:
+                sakura_messages = []
+                for msg in sakura.messages:
+                    text = msg.get('text', '')
+                    if not text or len(text.strip()) < 5:
+                        continue
+                    if not passes_privacy_filter(text):
+                        skipped_privacy += 1
+                        continue
+                    sakura_messages.append({
+                        'id': msg.get('id', ''),
+                        'text': text,
+                        'chat_id': 'sakura_telegram',
+                        'username': msg.get('sender', ''),
+                        'chat_title': 'Sakura Blossom Community',
+                        'timestamp': msg.get('timestamp', ''),
+                    })
+
+                _import_status["progress"] = (
+                    f"Embedding Sakura: {len(sakura_messages)} messages..."
+                )
+                count = orchestrator.vector_memory.bulk_import(
+                    sakura_messages,
+                    batch_size=batch_size,
+                    source_label="sakura"
+                )
+                results['sakura'] = {
+                    'imported': count,
+                    'total_eligible': len(sakura_messages),
+                }
+            else:
+                results['sakura'] = {'error': 'Sakura history not loaded'}
 
         results['skipped_privacy'] = skipped_privacy
         _import_status["results"] = results
