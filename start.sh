@@ -8,6 +8,8 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
     exit 1
 fi
 echo "ANTHROPIC_API_KEY is set: YES"
+echo "OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo 'YES' || echo 'NO')"
+echo "PINECONE_API_KEY is set: $([ -n "$PINECONE_API_KEY" ] && echo 'YES' || echo 'NO')"
 
 # Start Python API in background, redirect output to show errors
 echo "Starting Python API..."
