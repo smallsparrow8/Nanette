@@ -35,6 +35,12 @@ class VectorMemory:
 
         try:
             from pinecone import Pinecone
+        except ImportError as e:
+            self._init_error = f"Cannot import pinecone: {e}"
+            print(f"[VectorMemory] {self._init_error}")
+            return False
+
+        try:
             from openai import OpenAI
 
             self._pc = Pinecone(api_key=settings.pinecone_api_key)

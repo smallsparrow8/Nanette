@@ -11,19 +11,37 @@ echo "ANTHROPIC_API_KEY is set: YES"
 echo "OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo 'YES' || echo 'NO')"
 echo "PINECONE_API_KEY is set: $([ -n "$PINECONE_API_KEY" ] && echo 'YES' || echo 'NO')"
 
+# Test pinecone import before starting
+echo "Testing pinecone import..."
+python -c "from pinecone import Pinecone; print('pinecone import OK')" 2>&1 || echo "WARNING: pinecone import failed"
+
 # Start Python API in background, redirect output to show errors
 echo "Starting Python API..."
 python -m api.main 2>&1 &
 API_PID=$!
 
 # Wait for API to start and verify it's running
-sleep 5
-if ! kill -0 $API_PID 2>/dev/null; then
-    echo "ERROR: Python API crashed on startup!"
-    echo "Check logs above for error details."
-    exit 1
+echo "Waiting for API to initialize..."
+API_READY=false
+for i in $(seq 1 20); do
+    sleep 2
+    if ! kill -0 $API_PID 2>/dev/null; then
+        echo "ERROR: Python API crashed on startup!"
+        exit 1
+    fi
+    if curl -s http://localhost:8000/docs > /dev/null 2>&1; then
+        API_READY=true
+        break
+    fi
+    echo "  Waiting... ($((i*2))s)"
+done
+
+if [ "$API_READY" = true ]; then
+    echo "Python API started successfully (PID: $API_PID)"
+else
+    echo "WARNING: API process running but not responding yet (PID: $API_PID)"
+    echo "Continuing anyway - it may still be loading history..."
 fi
-echo "Python API started successfully (PID: $API_PID)"
 
 # Start Telegram bot in foreground
 echo "Starting Telegram bot..."
