@@ -264,6 +264,37 @@ export async function handleChatMediaMessage(ctx: Context) {
   const username = ctx.from?.username || ctx.from?.first_name || 'Unknown';
   const caption = ('caption' in ctx.message! ? (ctx.message as any).caption : '') || '';
 
+  // Telegram bots can only download files up to 20MB
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
+  if (fileInfo.fileSize && fileInfo.fileSize > MAX_FILE_SIZE) {
+    // Still send to API without the file data so Nanette can respond naturally
+    try {
+      const history = conversationHistory.get(chatId) || [];
+      const mediaDesc = fileInfo.fileName
+        ? `[sent a ${fileInfo.mediaType} file: ${fileInfo.fileName} (${(fileInfo.fileSize / 1024 / 1024).toFixed(1)}MB - too large to view)]`
+        : `[sent a large ${fileInfo.mediaType} (${(fileInfo.fileSize / 1024 / 1024).toFixed(1)}MB - too large to view)]`;
+      const response = await axios.post(
+        `${API_URL}/chat`,
+        {
+          message: caption ? `${caption}\n\n${mediaDesc}` : mediaDesc,
+          conversation_history: history.slice(-20),
+          user_id: userId.toString(),
+          channel_id: chatId.toString(),
+          username: username,
+          is_group: false,
+          directly_addressed: true,
+        },
+        { timeout: 60000 }
+      );
+      if (response.data.response) {
+        await ctx.reply(response.data.response, { parse_mode: 'Markdown' });
+      }
+    } catch (err: any) {
+      console.error('Error handling large file:', err.message);
+    }
+    return;
+  }
+
   // Show typing action
   await ctx.sendChatAction('typing');
 

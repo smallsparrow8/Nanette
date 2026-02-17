@@ -236,6 +236,41 @@ export async function handleGroupMediaMessage(ctx: Context) {
   // Check if directly addressed
   const directlyAddressed = isDirectlyAddressed(ctx, caption);
 
+  // Telegram bots can only download files up to 20MB
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
+  if (fileInfo.fileSize && fileInfo.fileSize > MAX_FILE_SIZE) {
+    // Only respond if directly addressed — skip silently for large files in groups
+    if (directlyAddressed) {
+      try {
+        const mediaDesc = fileInfo.fileName
+          ? `[sent a ${fileInfo.mediaType} file: ${fileInfo.fileName} (${(fileInfo.fileSize / 1024 / 1024).toFixed(1)}MB - too large to view)]`
+          : `[sent a large ${fileInfo.mediaType} (${(fileInfo.fileSize / 1024 / 1024).toFixed(1)}MB - too large to view)]`;
+        const response = await axios.post(
+          `${API_URL}/chat`,
+          {
+            message: caption ? `${caption}\n\n${mediaDesc}` : mediaDesc,
+            conversation_history: [],
+            channel_id: String(chatId),
+            channel_title: chatTitle,
+            username: username,
+            is_group: true,
+            directly_addressed: true,
+          },
+          { timeout: 60000 }
+        );
+        if (response.data.response && response.data.should_respond !== false) {
+          await ctx.reply(response.data.response, {
+            parse_mode: 'Markdown',
+            reply_parameters: { message_id: messageId },
+          });
+        }
+      } catch (err: any) {
+        console.error('Error handling large file in group:', err.message);
+      }
+    }
+    return;
+  }
+
   try {
     // Download the file
     const fileLink = await ctx.telegram.getFileLink(fileInfo.fileId);
