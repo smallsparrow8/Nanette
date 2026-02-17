@@ -563,6 +563,155 @@ async def get_memory_context(request: GetMemoryContextRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ImportHistoryRequest(BaseModel):
+    source: str = "all"  # "rin", "hoichi", or "all"
+    batch_size: int = 100
+
+
+# Privacy filter patterns to exclude from Pinecone
+import re
+import threading
+PRIVACY_PATTERNS = [
+    re.compile(r'shockstar\w*aes', re.IGNORECASE),
+    re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),  # emails
+    re.compile(r'\b0x[a-fA-F0-9]{64}\b'),  # private keys (64 hex chars)
+]
+
+# Track import status
+_import_status = {"running": False, "progress": "", "results": None}
+
+
+def passes_privacy_filter(text: str) -> bool:
+    """Return False if text contains sensitive content"""
+    for pattern in PRIVACY_PATTERNS:
+        if pattern.search(text):
+            return False
+    return True
+
+
+def _run_import(source: str, batch_size: int):
+    """Background import worker"""
+    global _import_status
+    from core.nanette.rin_chat_history import get_rin_history
+    from core.nanette.hoichi_chat_history import get_hoichi_history
+
+    results = {}
+    skipped_privacy = 0
+
+    try:
+        # Import RIN
+        if source in ("rin", "all"):
+            _import_status["progress"] = "Preparing RIN messages..."
+            rin = get_rin_history()
+            if rin and rin.is_loaded:
+                rin_messages = []
+                for msg in rin.messages:
+                    text = msg.get('text', '')
+                    if not text or len(text.strip()) < 5:
+                        continue
+                    if not passes_privacy_filter(text):
+                        skipped_privacy += 1
+                        continue
+                    rin_messages.append({
+                        'id': msg.get('id', ''),
+                        'text': text,
+                        'chat_id': 'rin_telegram',
+                        'username': msg.get('sender', ''),
+                        'chat_title': 'RinTinTin Official',
+                        'timestamp': msg.get('timestamp', ''),
+                    })
+
+                _import_status["progress"] = f"Embedding RIN: {len(rin_messages)} messages..."
+                count = orchestrator.vector_memory.bulk_import(
+                    rin_messages,
+                    batch_size=batch_size,
+                    source_label="rin"
+                )
+                results['rin'] = {'imported': count, 'total_eligible': len(rin_messages)}
+            else:
+                results['rin'] = {'error': 'RIN history not loaded'}
+
+        # Import HOICHI
+        if source in ("hoichi", "all"):
+            _import_status["progress"] = "Preparing HOICHI messages..."
+            hoichi = get_hoichi_history()
+            if hoichi and hoichi.is_loaded:
+                hoichi_messages = []
+                for msg in hoichi.messages:
+                    text = msg.get('text', '')
+                    if not text or len(text.strip()) < 5:
+                        continue
+                    if not passes_privacy_filter(text):
+                        skipped_privacy += 1
+                        continue
+                    hoichi_messages.append({
+                        'id': msg.get('id', ''),
+                        'text': text,
+                        'chat_id': 'hoichi_telegram',
+                        'username': msg.get('sender', ''),
+                        'chat_title': 'HOICHI Community',
+                        'timestamp': msg.get('timestamp', ''),
+                    })
+
+                _import_status["progress"] = f"Embedding HOICHI: {len(hoichi_messages)} messages..."
+                count = orchestrator.vector_memory.bulk_import(
+                    hoichi_messages,
+                    batch_size=batch_size,
+                    source_label="hoichi"
+                )
+                results['hoichi'] = {'imported': count, 'total_eligible': len(hoichi_messages)}
+            else:
+                results['hoichi'] = {'error': 'HOICHI history not loaded'}
+
+        results['skipped_privacy'] = skipped_privacy
+        _import_status["results"] = results
+        _import_status["progress"] = "Complete!"
+        print(f"[Import] Complete: {results}")
+
+    except Exception as e:
+        _import_status["progress"] = f"Error: {e}"
+        _import_status["results"] = {"error": str(e)}
+        print(f"[Import] Error: {e}")
+    finally:
+        _import_status["running"] = False
+
+
+@app.post("/import-history")
+async def import_history(request: ImportHistoryRequest):
+    """
+    Bulk import RIN/HOICHI chat history into Pinecone.
+    Runs in background. Check /import-status for progress.
+    """
+    if not orchestrator.vector_memory.is_ready:
+        raise HTTPException(status_code=503, detail="Vector memory (Pinecone) not connected")
+
+    if _import_status["running"]:
+        return {"status": "already_running", "progress": _import_status["progress"]}
+
+    _import_status["running"] = True
+    _import_status["progress"] = "Starting..."
+    _import_status["results"] = None
+
+    thread = threading.Thread(
+        target=_run_import,
+        args=(request.source, request.batch_size),
+        daemon=True
+    )
+    thread.start()
+
+    return {"status": "started", "message": "Import running in background. Check /import-status for progress."}
+
+
+@app.get("/import-status")
+async def import_status():
+    """Check the status of a bulk import"""
+    return {
+        "running": _import_status["running"],
+        "progress": _import_status["progress"],
+        "results": _import_status["results"],
+    }
+
+
 if __name__ == "__main__":
     print("Starting Nanette API...")
     print(f"Environment: {settings.environment}")

@@ -94,6 +94,14 @@ class VectorMemory:
         )
         return response.data[0].embedding
 
+    def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a batch of texts"""
+        response = self._openai.embeddings.create(
+            model="text-embedding-3-small",
+            input=texts
+        )
+        return [item.embedding for item in response.data]
+
     def store_message(
         self, message_id: str, text: str,
         chat_id: str, user_id: Optional[str] = None,
@@ -235,44 +243,53 @@ class VectorMemory:
             return 0
 
         imported = 0
-        batch = []
+        embed_batch_size = 256  # OpenAI batch limit for embeddings
 
+        # Process in chunks for batched embedding
+        eligible = []
         for msg in messages:
             text = msg.get('text', '')
-            if not text or len(text.strip()) < 5:
-                continue
+            if text and len(text.strip()) >= 5:
+                eligible.append(msg)
+
+        total = len(eligible)
+        print(f"[VectorMemory] Starting import: {total} messages")
+
+        for i in range(0, total, embed_batch_size):
+            chunk = eligible[i:i + embed_batch_size]
+            texts = [m['text'][:1000] for m in chunk]
 
             try:
-                embedding = self._embed(text)
-                vec_id = f"{source_label}_{msg.get('id', imported)}"
-                metadata = {
-                    'text': text[:1000],
-                    'chat_id': str(msg.get('chat_id', '')),
-                    'username': msg.get('username', ''),
-                    'chat_title': msg.get('chat_title', ''),
-                    'is_group': True,
-                    'platform': 'telegram',
-                    'timestamp': msg.get('timestamp', ''),
-                }
-                batch.append((vec_id, embedding, metadata))
+                embeddings = self._embed_batch(texts)
 
-                if len(batch) >= batch_size:
-                    self._index.upsert(vectors=batch)
-                    imported += len(batch)
-                    print(
-                        f"[VectorMemory] Imported {imported} "
-                        f"messages..."
-                    )
-                    batch = []
+                vectors = []
+                for j, (msg, emb) in enumerate(zip(chunk, embeddings)):
+                    vec_id = f"{source_label}_{msg.get('id', i + j)}"
+                    metadata = {
+                        'text': msg['text'][:1000],
+                        'chat_id': str(msg.get('chat_id', '')),
+                        'username': msg.get('username', ''),
+                        'chat_title': msg.get('chat_title', ''),
+                        'is_group': True,
+                        'platform': 'telegram',
+                        'timestamp': msg.get('timestamp', ''),
+                    }
+                    vectors.append((vec_id, emb, metadata))
+
+                # Upsert in Pinecone batches
+                for k in range(0, len(vectors), batch_size):
+                    pine_batch = vectors[k:k + batch_size]
+                    self._index.upsert(vectors=pine_batch)
+
+                imported += len(vectors)
+                print(
+                    f"[VectorMemory] Imported {imported}/{total} "
+                    f"messages..."
+                )
 
             except Exception as e:
-                print(f"[VectorMemory] Import error: {e}")
+                print(f"[VectorMemory] Batch import error at {i}: {e}")
                 continue
-
-        # Final batch
-        if batch:
-            self._index.upsert(vectors=batch)
-            imported += len(batch)
 
         print(f"[VectorMemory] Import complete: {imported} messages")
         return imported
