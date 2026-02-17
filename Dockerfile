@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip uninstall -y pinecone-client 2>/dev/null; pip install --no-cache-dir -r requirements.txt
 
 # Install Telegram bot dependencies
 COPY bots/telegram-bot/package.json bots/telegram-bot/package-lock.json bots/telegram-bot/
