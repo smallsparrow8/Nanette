@@ -3,6 +3,16 @@ import axios from 'axios';
 
 const API_URL = process.env.API_URL || 'http://localhost:8000';
 
+// Store conversation history per group chat (keyed by chat ID)
+const groupConversationHistory = new Map<number, any[]>();
+
+// Periodically clean up stale group histories to avoid memory leaks
+setInterval(() => {
+  if (groupConversationHistory.size > 200) {
+    groupConversationHistory.clear();
+  }
+}, 30 * 60 * 1000); // every 30 minutes
+
 /**
  * Check if Nanette is directly addressed (must always respond)
  */
@@ -50,13 +60,19 @@ export async function handleGroupMessage(ctx: Context) {
   // Check if directly addressed (must respond)
   const directlyAddressed = isDirectlyAddressed(ctx, text);
 
+  // Get conversation history for this group
+  let history = groupConversationHistory.get(chatId) || [];
+  if (history.length > 20) {
+    history = history.slice(-20);
+  }
+
   // Send to API — Nanette decides whether to engage
   try {
     const response = await axios.post(
       `${API_URL}/chat`,
       {
         message: text,
-        conversation_history: [],
+        conversation_history: history,
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
         channel_title: chatTitle,
@@ -70,8 +86,12 @@ export async function handleGroupMessage(ctx: Context) {
 
     const result = response.data;
 
+    // Track all messages in history (with username for group context)
+    history.push({ role: 'user', content: `${username}: ${text}` });
+
     // Only reply if Nanette decided to respond
     if (result.response && result.should_respond !== false) {
+      history.push({ role: 'assistant', content: result.response });
       await ctx.reply(result.response, {
         parse_mode: 'Markdown',
         reply_parameters: {
@@ -79,6 +99,8 @@ export async function handleGroupMessage(ctx: Context) {
         },
       });
     }
+
+    groupConversationHistory.set(chatId, history);
   } catch (error: any) {
     if (error.code !== 'ECONNREFUSED') {
       console.error(
@@ -236,6 +258,12 @@ export async function handleGroupMediaMessage(ctx: Context) {
   // Check if directly addressed
   const directlyAddressed = isDirectlyAddressed(ctx, caption);
 
+  // Get conversation history for this group
+  let history = groupConversationHistory.get(chatId) || [];
+  if (history.length > 20) {
+    history = history.slice(-20);
+  }
+
   // Telegram bots can only download files up to 20MB
   const MAX_FILE_SIZE = 20 * 1024 * 1024;
   if (fileInfo.fileSize && fileInfo.fileSize > MAX_FILE_SIZE) {
@@ -249,7 +277,7 @@ export async function handleGroupMediaMessage(ctx: Context) {
           `${API_URL}/chat`,
           {
             message: caption ? `${caption}\n\n${mediaDesc}` : mediaDesc,
-            conversation_history: [],
+            conversation_history: history,
             channel_id: String(chatId),
             channel_title: chatTitle,
             username: username,
@@ -258,12 +286,15 @@ export async function handleGroupMediaMessage(ctx: Context) {
           },
           { timeout: 60000 }
         );
+        history.push({ role: 'user', content: `${username}: [${fileInfo.mediaType}] ${caption}` });
         if (response.data.response && response.data.should_respond !== false) {
+          history.push({ role: 'assistant', content: response.data.response });
           await ctx.reply(response.data.response, {
             parse_mode: 'Markdown',
             reply_parameters: { message_id: messageId },
           });
         }
+        groupConversationHistory.set(chatId, history);
       } catch (err: any) {
         console.error('Error handling large file in group:', err.message);
       }
@@ -287,7 +318,7 @@ export async function handleGroupMediaMessage(ctx: Context) {
       `${API_URL}/chat`,
       {
         message: caption || '',
-        conversation_history: [],
+        conversation_history: history,
         user_id: userId ? String(userId) : null,
         channel_id: String(chatId),
         channel_title: chatTitle,
@@ -306,8 +337,12 @@ export async function handleGroupMediaMessage(ctx: Context) {
 
     const result = response.data;
 
+    // Track in history
+    history.push({ role: 'user', content: `${username}: [${fileInfo.mediaType}] ${caption || ''}` });
+
     // Only reply if Nanette decided to respond
     if (result.response && result.should_respond !== false) {
+      history.push({ role: 'assistant', content: result.response });
       await ctx.reply(result.response, {
         parse_mode: 'Markdown',
         reply_parameters: {
@@ -315,6 +350,8 @@ export async function handleGroupMediaMessage(ctx: Context) {
         },
       });
     }
+
+    groupConversationHistory.set(chatId, history);
   } catch (error: any) {
     // Silently fail for group messages
     if (error.code !== 'ECONNREFUSED') {

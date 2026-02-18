@@ -82,6 +82,13 @@ class ConfigCheckRequest(BaseModel):
     feature: str
 
 
+class ConfigSetThemeRequest(BaseModel):
+    server_id: str
+    platform: str
+    user_id: str
+    theme: Optional[str] = None  # null to clear theme
+
+
 class ChannelMessageRequest(BaseModel):
     chat_id: str
     chat_title: Optional[str] = None
@@ -239,7 +246,8 @@ async def chat(request: ChatRequest):
             file_size=request.file_size,
             analysis_mode=request.analysis_mode,
             user_id=request.user_id,
-            channel_id=request.channel_id
+            channel_id=request.channel_id,
+            channel_title=request.channel_title
         )
 
         # Handle both old (string) and new (dict) return formats
@@ -419,6 +427,43 @@ async def check_feature(request: ConfigCheckRequest):
 
         enabled = config.is_feature_enabled(request.feature)
         return {"enabled": enabled, "feature": request.feature}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/config/set-theme")
+async def set_theme(request: ConfigSetThemeRequest):
+    """Set or clear a per-group theme/focus for Nanette"""
+    try:
+        is_admin = config_repo.is_admin(
+            request.server_id, request.platform, request.user_id
+        )
+        if not is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Only server owners and admins can set themes."
+            )
+
+        # Update group_theme within a single session
+        from shared.database.models import ServerConfig
+        with orchestrator.db.get_session() as session:
+            config = session.query(ServerConfig).filter_by(
+                server_id=str(request.server_id),
+                platform=request.platform
+            ).first()
+            if not config:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Server config not found. Send a message first to register."
+                )
+            config.group_theme = request.theme
+            session.commit()
+
+        action = "cleared" if request.theme is None else "set"
+        return {"success": True, "action": action, "theme": request.theme}
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

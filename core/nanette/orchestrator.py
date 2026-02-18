@@ -382,7 +382,8 @@ class AnalysisOrchestrator:
                                image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
                                file_name: Optional[str] = None, file_size: Optional[int] = None,
                                analysis_mode: Optional[str] = None,
-                               user_id: Optional[str] = None, channel_id: Optional[str] = None):
+                               user_id: Optional[str] = None, channel_id: Optional[str] = None,
+                               channel_title: Optional[str] = None):
         """
         Chat with Nanette
 
@@ -577,6 +578,23 @@ class AnalysisOrchestrator:
             image_base64 = video_frames[0]
             image_media_type = 'image/jpeg'
 
+        # Resolve per-group theme
+        group_theme = None
+        if is_group and channel_id:
+            config = self.config_repo.get(str(channel_id), 'telegram')
+            if config and getattr(config, 'group_theme', None):
+                group_theme = config.group_theme
+            elif channel_title:
+                group_theme = self._auto_detect_theme(channel_title)
+
+        # Detect DM share intent (e.g., "share this in RIN group")
+        if not is_group and user_id and message:
+            share_response = self._handle_dm_share_intent(
+                message, user_id, channel_id
+            )
+            if share_response:
+                return {"response": share_response, "should_respond": True}
+
         # Call Nanette with all context
         result = await self.nanette.chat(
             enhanced_message, conversation_history,
@@ -584,7 +602,8 @@ class AnalysisOrchestrator:
             image_base64=image_base64, image_media_type=image_media_type,
             file_name=file_name, file_size=file_size, analysis_mode=analysis_mode,
             member_context=member_context, historical_context=historical_context,
-            conversation_context=conversation_context
+            conversation_context=conversation_context,
+            channel_title=channel_title, group_theme=group_theme
         )
 
         # Store Nanette's response in memory
@@ -875,6 +894,81 @@ class AnalysisOrchestrator:
     def get_help(self) -> str:
         """Get help message"""
         return self.nanette.get_help_message()
+
+    def _auto_detect_theme(self, channel_title: str) -> Optional[str]:
+        """Auto-detect group theme from channel title"""
+        title_lower = channel_title.lower()
+        if 'sakura' in title_lower:
+            return (
+                "You are in the Sakura Blossom community. Lean into Sakura-related "
+                "topics, their token, their ecosystem, and their culture. You're still "
+                "Nanette — still $RIN's guardian — but you're a welcome guest here, "
+                "and you focus on what matters to this community."
+            )
+        elif 'rin' in title_lower or 'rintintin' in title_lower:
+            return (
+                "You are in the RIN community — your home. This is your pack. "
+                "Focus on $RIN, the community, the legacy of Rin Tin Tin, and "
+                "everything that makes this community special."
+            )
+        elif 'hoichi' in title_lower:
+            return (
+                "You are in the HOICHI community. Focus on HOICHI-related topics, "
+                "their ecosystem, and their community culture. You're a friend here, "
+                "connected through the broader pack."
+            )
+        elif 'okinami' in title_lower:
+            return (
+                "You are in the OKINAMI community. Focus on OKINAMI-related topics "
+                "and their ecosystem. You're a welcome presence, connected through "
+                "the broader community family."
+            )
+        return None
+
+    def _handle_dm_share_intent(
+        self, message: str, user_id: str, dm_chat_id: str
+    ) -> Optional[str]:
+        """Detect and handle when a DM user asks to share info with a group"""
+        import re as _re
+        msg_lower = message.lower()
+
+        # Only trigger on explicit share language
+        share_patterns = [
+            r'share (?:this|that|it|my (?:message|info|conversation)) (?:in|with|to) (?:the )?(.+?)(?:\s+group|\s+chat|\s+channel)?$',
+            r'tell (?:the )?(.+?) (?:group|chat|channel)',
+            r'post (?:this|that|it) (?:in|to) (?:the )?(.+?)(?:\s+group|\s+chat|\s+channel)?$',
+        ]
+        for pattern in share_patterns:
+            match = _re.search(pattern, msg_lower)
+            if match:
+                target_name = match.group(1).strip()
+                target_config = self._find_group_by_name(target_name)
+                if target_config:
+                    count = self.grant_dm_share_permission(
+                        user_id, target_config.server_id
+                    )
+                    group_label = target_config.server_name or target_name
+                    return (
+                        f"Done — I've marked your recent messages as shareable "
+                        f"in {group_label}. When it's relevant, I may reference "
+                        f"what you've shared with me there. Your other DMs stay "
+                        f"private as always."
+                    )
+                else:
+                    return (
+                        f"I don't recognize a group called '{target_name}'. "
+                        f"Can you give me the exact name?"
+                    )
+        return None
+
+    def _find_group_by_name(self, name: str) -> Optional[Any]:
+        """Find a group config by partial name match"""
+        from shared.database.models import ServerConfig as SC
+        with self.db.get_session() as session:
+            configs = session.query(SC).filter(
+                SC.server_name.ilike(f'%{name}%')
+            ).all()
+            return configs[0] if configs else None
 
     # Memory methods for persistent conversation storage
     def store_memory(

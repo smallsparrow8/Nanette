@@ -230,6 +230,9 @@ class ServerConfig(Base):
     channel_analysis_enabled = Column(Boolean, default=False)
     rin_clue_detection = Column(Boolean, default=False)
 
+    # Per-group theme/focus (custom system prompt addon)
+    group_theme = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(

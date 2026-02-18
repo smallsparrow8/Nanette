@@ -153,7 +153,9 @@ Format your analysis like this when reviewing contracts:
                    analysis_mode: Optional[str] = None,
                    member_context: Optional[str] = None,
                    historical_context: Optional[str] = None,
-                   conversation_context: Optional[str] = None):
+                   conversation_context: Optional[str] = None,
+                   channel_title: Optional[str] = None,
+                   group_theme: Optional[str] = None):
         """
         General chat with Nanette with tool support and optional media analysis
 
@@ -181,7 +183,12 @@ Format your analysis like this when reviewing contracts:
         if is_group and not directly_addressed:
             return await self._decide_group_engagement(
                 user_message, username, image_base64, image_media_type,
-                file_name, file_size, analysis_mode, member_context
+                file_name, file_size, analysis_mode, member_context,
+                conversation_history=messages,
+                historical_context=historical_context,
+                conversation_context=conversation_context,
+                channel_title=channel_title,
+                group_theme=group_theme
             )
 
         # Check if user is asking for information that requires tools (text only)
@@ -347,6 +354,14 @@ You have access to the community's chat history. Here's relevant context from pa
 Use this historical knowledge naturally — you've been watching this community. Don't say "I found in the chat logs" or "according to records." You simply remember, like any longtime community member would. This history helps you find clues, make connections, and understand the community's journey.
 """
 
+            # Add per-group theme/focus
+            if group_theme:
+                enhanced_system_prompt += f"""
+
+GROUP FOCUS:
+{group_theme}
+Adapt your knowledge and attention to this community's interests while staying true to who you are."""
+
             # Add persistent conversation memory context
             if conversation_context:
                 enhanced_system_prompt += f"""
@@ -380,14 +395,29 @@ MEMORY USAGE RULES:
             traceback.print_exc()
             return {"response": "Something's interfering with my senses right now. Give me a moment and try again.", "should_respond": True}
 
-    async def _decide_group_engagement(self, user_message: str, username: Optional[str] = None,
-                                       image_base64: Optional[str] = None, image_media_type: Optional[str] = None,
-                                       file_name: Optional[str] = None, file_size: Optional[int] = None,
-                                       analysis_mode: Optional[str] = None, member_context: Optional[str] = None):
+    async def _decide_group_engagement(
+        self, user_message: str, username: Optional[str] = None,
+        image_base64: Optional[str] = None,
+        image_media_type: Optional[str] = None,
+        file_name: Optional[str] = None, file_size: Optional[int] = None,
+        analysis_mode: Optional[str] = None,
+        member_context: Optional[str] = None,
+        conversation_history: Optional[List[Dict]] = None,
+        historical_context: Optional[str] = None,
+        conversation_context: Optional[str] = None,
+        channel_title: Optional[str] = None,
+        group_theme: Optional[str] = None,
+    ):
         """
-        Decide if Nanette should engage with a group message she wasn't directly addressed in.
-        Let her read the conversation naturally and decide when to contribute.
+        Decide if Nanette should engage with a group message she wasn't
+        directly addressed in. Now with full context: tools, Pinecone,
+        conversation history, and per-group theming.
         """
+        # Check if user is asking something that tools can answer
+        tool_context = None
+        if user_message:
+            tool_context = await self._check_and_use_tools(user_message)
+
         # Build context about the message
         context_parts = []
         if username:
@@ -395,17 +425,23 @@ MEMORY USAGE RULES:
         if file_name:
             context_parts.append(f"Shared file: {file_name}")
         if member_context:
-            context_parts.append(f"[You know about this person: {member_context}]")
+            context_parts.append(
+                f"[You know about this person: {member_context}]"
+            )
         context = "\n".join(context_parts) if context_parts else ""
 
         # Describe what media was shared
         media_description = ""
         if image_base64 or image_media_type:
-            viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            viewable_types = [
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp'
+            ]
             if image_media_type in viewable_types:
-                media_description = "\n\n[AN IMAGE IS ATTACHED - you can see it below. Consider whether it's interesting enough to comment on.]"
+                media_description = (
+                    "\n\n[AN IMAGE IS ATTACHED - you can see it below. "
+                    "Consider whether it's interesting enough to comment on.]"
+                )
             else:
-                # Describe non-viewable media naturally
                 media_hints = {
                     'video/mp4': 'a video',
                     'video/webm': 'a video',
@@ -416,16 +452,38 @@ MEMORY USAGE RULES:
                     'audio/aac': 'an audio file',
                     'application/x-tgsticker': 'an animated sticker',
                 }
-                media_label = media_hints.get(image_media_type, f'a {image_media_type or "media"} file')
+                media_label = media_hints.get(
+                    image_media_type,
+                    f'a {image_media_type or "media"} file'
+                )
                 file_label = f' "{file_name}"' if file_name else ''
-                media_description = f"\n\n[Someone shared {media_label}{file_label}. You can't view/listen to it directly, but consider if the context or filename is interesting enough to comment on naturally.]"
+                media_description = (
+                    f"\n\n[Someone shared {media_label}{file_label}. "
+                    f"You can't view/listen to it directly, but consider "
+                    f"if the context is interesting enough to comment on.]"
+                )
+
+        # Build enriched context sections
+        extra_context = ""
+        if tool_context:
+            extra_context += (
+                f"\n\n[Current Information Retrieved]:\n{tool_context}"
+            )
+        if historical_context:
+            extra_context += (
+                f"\n\n[Community History Context]:\n{historical_context}"
+            )
+        if conversation_context:
+            extra_context += (
+                f"\n\n[Recent Conversation Memory]:\n{conversation_context}"
+            )
 
         # Build the decision prompt
         message_text = user_message if user_message else "(no caption)"
-        decision_prompt = f"""You are Nanette in a group chat. Someone just posted this message (they did NOT directly address you):
+        decision_prompt = f"""You are Nanette in a group chat{f' ({channel_title})' if channel_title else ''}. Someone just posted this message (they did NOT directly address you):
 
 {context}
-Message: {message_text}{media_description}
+Message: {message_text}{media_description}{extra_context}
 
 As a natural member of the community, decide if you should respond. Consider:
 - Is this something you can genuinely help with or add value to?
@@ -433,18 +491,37 @@ As a natural member of the community, decide if you should respond. Consider:
 - Are they asking a question the group might benefit from your knowledge on?
 - Is there a crypto/contract topic you have insight on?
 - Would you naturally chime in if you were a person in this group?
+- If you retrieved current data above, that's valuable — share it naturally.
 
 If you decide to respond, write ONLY your natural response — nothing else.
 If you decide NOT to respond, just write exactly: [NO_RESPONSE]
 
-CRITICAL: Never include meta-commentary about your decision to respond. No "I noticed...", "I'm chiming in because...", "This caught my attention...", "I thought I'd add...", or any explanation of WHY you're responding. Just respond naturally as if you were always part of the conversation. Your response should read like any other message in the chat — direct and authentic."""
+CRITICAL: Never include meta-commentary about your decision to respond. No "I noticed...", "I'm chiming in because...", "This caught my attention...", "I thought I'd add...", or any explanation of WHY you're responding. Just respond naturally as if you were always part of the conversation."""
+
+        # Build enhanced system prompt (same enrichments as direct chat)
+        enhanced_system = self.system_prompt
+        if member_context:
+            enhanced_system += f"""
+
+MEMBER KNOWLEDGE (PRIVATE - DO NOT VOLUNTEER):
+You know this about the person you're talking to: {member_context}
+Do NOT volunteer this information. Only reference if THEY bring it up."""
+
+        if group_theme:
+            enhanced_system += f"""
+
+GROUP FOCUS:
+{group_theme}
+Adapt your knowledge and attention to this community's interests."""
 
         try:
             # Build content for the API call
             content = []
 
             # Add image if present
-            viewable_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            viewable_types = [
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp'
+            ]
             if image_base64 and image_media_type in viewable_types:
                 content.append({
                     "type": "image",
@@ -457,17 +534,21 @@ CRITICAL: Never include meta-commentary about your decision to respond. No "I no
 
             content.append({"type": "text", "text": decision_prompt})
 
+            # Use conversation history for continuity
+            messages = list(conversation_history or [])
+            messages.append({"role": "user", "content": content})
+
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1000,
-                system=self.system_prompt,
-                messages=[{"role": "user", "content": content}]
+                system=enhanced_system,
+                messages=messages
             )
 
             response_text = response.content[0].text.strip()
 
             # Check if Nanette decided not to respond
-            if "[NO_RESPONSE]" in response_text or response_text == "[NO_RESPONSE]":
+            if "[NO_RESPONSE]" in response_text:
                 return {"response": None, "should_respond": False}
 
             return {"response": response_text, "should_respond": True}
